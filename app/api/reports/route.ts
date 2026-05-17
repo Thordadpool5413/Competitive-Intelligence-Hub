@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getReport, readStore } from '@/lib/store';
+import { getReport, readStore } from '../../../lib/store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
