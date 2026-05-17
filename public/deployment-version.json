@@ -1,6 +1,6 @@
 {
   "app": "Competitive Intelligence Hub",
-  "deploymentFingerprint": "hostinger-pull-check-2026-05-17-02",
+  "deploymentFingerprint": "hostinger-startup-fix-2026-05-17-03",
   "branch": "main",
-  "message": "If Hostinger serves this exact file, it is pulling the latest GitHub repository files. If this file is missing or different, Hostinger is building an old commit, wrong branch, wrong repository, wrong application root, or cached artifact."
+  "message": "If Hostinger serves this exact file, it is pulling the latest GitHub repository files after the Node startup compatibility fix."
 }
