@@ -7,8 +7,9 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     app: 'Competitive Intelligence Hub',
-    version: '2026-05-17-json-guard-storage-cleanup',
-    message: 'If this route returns JSON, Hostinger is serving the latest Next.js API routes from GitHub main.',
+    version: 'stable-clean-next-server-2026-05-17-01',
+    message: 'If this route returns this exact version, Hostinger is running the cleaned GitHub main build through Next.js.',
+    expectedServer: 'server.js clean Next server',
     checkedAt: new Date().toISOString()
   });
 }
