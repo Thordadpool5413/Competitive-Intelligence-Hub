@@ -44,7 +44,7 @@ The production server starts from `server.js` and listens on `process.env.PORT` 
 
 ## Hostinger settings
 
-Use Node.js version 20 or newer.
+Use Node.js version 24 or newer.
 
 Build command:
 
@@ -84,7 +84,7 @@ If Hostinger automatically injects a port, use the Hostinger provided port and d
 4. Choose GitHub as the source.
 5. Select `Thordadpool5413/Competitive-Intelligence-Hub`.
 6. Select branch `main`.
-7. Set Node.js version to 20 or newer.
+7. Set Node.js version to 24 or newer.
 8. Set the build command to `npm install && npm run build`.
 9. Set the start command to `npm start`.
 10. Set the startup file to `server.js` if Hostinger asks for it.
