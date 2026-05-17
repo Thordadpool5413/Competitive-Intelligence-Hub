@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readStore, saveCompetitors } from '@/lib/store';
-import type { CompetitorInput } from '@/lib/types';
+import { readStore, saveCompetitors } from '../../../lib/store';
+import type { CompetitorInput } from '../../../lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
