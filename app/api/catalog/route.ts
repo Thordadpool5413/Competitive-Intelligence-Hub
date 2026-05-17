@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { andwellCatalog } from '@/lib/andwell';
-import { readStore, saveCatalogOverride } from '@/lib/store';
+import { andwellCatalog } from '../../../lib/andwell';
+import { readStore, saveCatalogOverride } from '../../../lib/store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
