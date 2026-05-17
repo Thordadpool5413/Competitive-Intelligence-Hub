@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import StorageCleanup from './storage-cleanup';
 
 export const metadata: Metadata = {
   title: 'Andwell Advantage Intelligence Hub',
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><StorageCleanup />{children}</body></html>;
 }
