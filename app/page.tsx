@@ -5,12 +5,13 @@ import { andwellCatalog } from '../lib/andwell';
 import { expertPromptModules, fullCompetitiveIntelligenceInstruction } from '../lib/expert-prompts';
 import type { CompetitorInput, IntelligenceReport } from '../lib/types';
 
-type View = 'dashboard' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
+type View = 'dashboard' | 'ai' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
 type ReportSummary = { id: string; generatedAt: string; competitorsAnalyzed: number; pagesReviewed: number; potentialAndwellAdvantages: number; humanReviewItems: number; competitors: string[]; executiveSummary: string };
 type ApiCheck = { route: string; ok: boolean; status: number; message: string; preview?: string };
 
 const nav: { key: View; label: string; note: string }[] = [
   { key: 'dashboard', label: 'Command Center', note: 'Executive snapshot' },
+  { key: 'ai', label: 'AI Intelligence', note: 'AI extraction output' },
   { key: 'prompt', label: 'Prompt Engine', note: 'Expert methodology' },
   { key: 'intake', label: 'Competitor Intake', note: 'Add up to 25 URLs' },
   { key: 'matrix', label: 'Comparison Matrix', note: 'Service and subservice view' },
@@ -69,6 +70,11 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
   return <div className="metricCard"><p>{label}</p><strong>{value}</strong>{hint ? <span>{hint}</span> : null}</div>;
 }
 
+function ListBlock({ title, items }: { title: string; items?: string[] }) {
+  const safeItems = (items || []).filter(Boolean);
+  return <Panel title={title}>{safeItems.length ? <div className="tagCloud">{safeItems.map((item) => <span key={item}>{item}</span>)}</div> : <p className="muted">No AI items returned yet.</p>}</Panel>;
+}
+
 export default function Page() {
   const [view, setView] = useState<View>('dashboard');
   const [competitors, setCompetitors] = useState<CompetitorInput[]>([]);
@@ -82,6 +88,7 @@ export default function Page() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  const aiAnalyses = currentReport?.analyses.filter((analysis) => analysis.aiExtraction) || [];
   const stats = useMemo(() => ({
     competitors: competitors.length,
     reports: reports.length,
@@ -90,7 +97,8 @@ export default function Page() {
     pages: currentReport?.pagesReviewed || 0,
     serviceFindings: currentReport?.allFindings?.length || 0,
     subserviceFindings: currentReport?.allSubserviceFindings?.length || 0,
-    reviewItems: currentReport?.humanReviewItems || 0
+    reviewItems: currentReport?.humanReviewItems || 0,
+    aiAnalyses: currentReport?.analyses.filter((analysis) => analysis.aiEnhanced).length || 0
   }), [competitors, reports, currentReport]);
 
   function clearLegacyBrowserStorage() {
@@ -142,10 +150,10 @@ export default function Page() {
     setBusy(true); setError(''); setNotice('');
     try {
       if (!competitors.length) throw new Error('Add at least one competitor URL first.');
-      const report = await api<IntelligenceReport>('/api/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ competitors, maxPagesPerSite: 24, save: true }) });
+      const report = await api<IntelligenceReport>('/api/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ competitors, maxPagesPerSite: 24, save: true, useAI: true }) });
       setCurrentReport(report);
-      setNotice('Analysis completed and saved on the server.');
-      setView('dashboard');
+      setNotice(report.aiEnabled ? 'AI enhanced analysis completed and saved on the server.' : 'Analysis completed and saved on the server. OpenAI extraction was not enabled or did not return data.');
+      setView(report.aiEnabled ? 'ai' : 'dashboard');
     } catch (err) { setError(err instanceof Error ? err.message : 'Analysis failed.'); } finally { setBusy(false); }
   }
 
@@ -155,7 +163,7 @@ export default function Page() {
       const response = await api<{ report: IntelligenceReport }>(`/api/reports?id=${encodeURIComponent(id)}`);
       setCurrentReport(response.report);
       setNotice('Stored report loaded.');
-      setView('dashboard');
+      setView(response.report.aiEnabled ? 'ai' : 'dashboard');
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load report.'); } finally { setBusy(false); }
   }
 
@@ -192,15 +200,16 @@ export default function Page() {
 
   return <div className="shell proShell">
     <aside className="side proSide">
-      <div className="brand proBrand"><p>Andwell Advantage</p><h1>Competitive Intelligence Hub</h1><span>Professional healthcare service line intelligence</span></div>
+      <div className="brand proBrand"><p>Andwell Advantage</p><h1>Competitive Intelligence Hub</h1><span>AI powered healthcare service line intelligence</span></div>
       <nav className="nav proNav">{nav.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => setView(item.key)}><strong>{item.label}</strong><small>{item.note}</small></button>)}</nav>
     </aside>
     <main className="main proMain">
-      <header className="head proHead"><div><small>Stable Build</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><button className="btn" disabled={busy} onClick={refreshServerState}>Load Server Data</button><button className="btn" onClick={() => setView('diagnostics')}>Diagnostics</button></div></header>
+      <header className="head proHead"><div><small>{currentReport?.aiEnabled ? `AI Enhanced | ${currentReport.aiModel || 'OpenAI'}` : 'Stable Build'}</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><button className="btn" disabled={busy} onClick={refreshServerState}>Load Server Data</button><button className="btn" onClick={() => setView('diagnostics')}>Diagnostics</button></div></header>
       <div className="content proContent">
         {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
         {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
         {view === 'dashboard' && <Dashboard stats={stats} currentReport={currentReport} setView={setView} exportJson={exportJson} clearLegacyBrowserStorage={clearLegacyBrowserStorage} />}
+        {view === 'ai' && <AIIntelligence currentReport={currentReport} aiAnalyses={aiAnalyses} />}
         {view === 'prompt' && <PromptEngine />}
         {view === 'intake' && <Intake competitors={competitors} setCompetitors={setCompetitors} urlInput={urlInput} setUrlInput={setUrlInput} addUrls={addUrls} saveCompetitors={saveCompetitors} runAnalysis={runAnalysis} busy={busy} />}
         {view === 'matrix' && <Matrix currentReport={currentReport} />}
@@ -216,10 +225,38 @@ export default function Page() {
 
 function Dashboard({ stats, currentReport, setView, exportJson, clearLegacyBrowserStorage }: { stats: Record<string, number>; currentReport: IntelligenceReport | null; setView: (view: View) => void; exportJson: () => void; clearLegacyBrowserStorage: () => void }) {
   return <>
-    <section className="hero proHero"><Badge tone="dark">Stable executive build</Badge><h1>Competitive intelligence that renders first, then connects to the backend safely.</h1><p>This version avoids startup API crashes. The interface loads immediately, diagnostics prove whether Hostinger is serving JSON, and analysis runs only when the API layer is confirmed.</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run competitor analysis</button><button className="btn" onClick={() => setView('diagnostics')}>Run diagnostics</button><button className="btn" onClick={clearLegacyBrowserStorage}>Clear browser cache keys</button></div></section>
-    <div className="grid cols4"><Stat label="Competitors" value={stats.competitors} hint="Loaded or entered" /><Stat label="Stored reports" value={stats.reports} hint="Server side" /><Stat label="Service lines" value={stats.serviceLines} hint="Andwell baseline" /><Stat label="Subservices" value={stats.subservices} hint="Capability depth" /></div>
-    {currentReport ? <Panel title="Current Executive Summary" className="featurePanel"><p>{currentReport.executiveSummary}</p><div className="row"><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><Badge>{stats.reviewItems} review items</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel> : <Panel title="No report loaded yet"><p>The app is ready. Use Diagnostics first if Hostinger has been returning HTML. Then run a new analysis or load stored reports.</p></Panel>}
+    <section className="hero proHero"><Badge tone="dark">Crawler plus AI extraction</Badge><h1>Website evidence, AI extraction, healthcare reasoning, and sales positioning in one workflow.</h1><p>The app crawls public competitor pages, sends readable content into the AI extraction engine when OpenAI is configured, and returns structured intelligence for services, benefits, claims, programs, proof points, calls to action, advantages, safe language, and battlecards.</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run AI competitor analysis</button><button className="btn" onClick={() => setView('ai')}>View AI intelligence</button><button className="btn" onClick={clearLegacyBrowserStorage}>Clear browser cache keys</button></div></section>
+    <div className="grid cols4"><Stat label="Competitors" value={stats.competitors} hint="Loaded or entered" /><Stat label="AI enhanced" value={stats.aiAnalyses} hint="OpenAI extraction" /><Stat label="Service lines" value={stats.serviceLines} hint="Andwell baseline" /><Stat label="Subservices" value={stats.subservices} hint="Capability depth" /></div>
+    {currentReport ? <Panel title="Current Executive Summary" className="featurePanel"><p>{currentReport.executiveSummary}</p>{currentReport.aiLeadershipSummary ? <div className="notice"><strong>AI leadership summary</strong><br />{currentReport.aiLeadershipSummary}</div> : null}<div className="row"><Badge tone={currentReport.aiEnabled ? 'green' : 'amber'}>{currentReport.aiEnabled ? 'AI enabled' : 'Rule based only'}</Badge><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel> : <Panel title="No report loaded yet"><p>The app is ready. Add competitor URLs, then run analysis. If OPENAI_API_KEY is configured in Hostinger, AI extraction will run server side.</p></Panel>}
     {currentReport?.competitorScores?.length ? <Panel title="Competitor Intelligence Scoreboard"><div className="grid cols2">{currentReport.competitorScores.map((score) => <div className="scoreCard proScore" key={score.competitorId}><div className="row spread"><h3>{score.competitorName}</h3><Badge tone={score.threatLevel === 'Strategic threat' ? 'red' : 'amber'}>{score.threatLevel}</Badge></div><p>{score.executiveReadout}</p><div className="scoreGrid"><Stat label="Overlap" value={`${score.serviceLineMatchScore}%`} /><Stat label="Depth" value={`${score.subserviceDepthScore}%`} /><Stat label="Andwell advantage" value={`${score.andwellDifferentiationScore}%`} /><Stat label="Review risk" value={`${score.reviewRiskScore}%`} /></div></div>)}</div></Panel> : null}
+  </>;
+}
+
+function AIIntelligence({ currentReport, aiAnalyses }: { currentReport: IntelligenceReport | null; aiAnalyses: NonNullable<IntelligenceReport['analyses']> }) {
+  if (!currentReport) return <Panel title="No report loaded"><p>Run or load a report to see AI extraction output.</p></Panel>;
+  if (!currentReport.aiEnabled || !aiAnalyses.length) return <Panel title="AI extraction not available"><p>This report does not include AI extraction output. Confirm `OPENAI_API_KEY` is set in Hostinger, redeploy, then run analysis again.</p></Panel>;
+  return <>
+    <section className="section"><div><h1>AI Intelligence</h1><p>Structured OpenAI extraction from crawled public pages: services, benefits, claims, programs, proof points, CTAs, advantages, safe language, review risk, and sales battlecards.</p></div><Badge tone="green">{currentReport.aiModel || 'OpenAI'} enabled</Badge></section>
+    {currentReport.aiLeadershipSummary ? <section className="hero answerHero"><h2>Leadership Summary</h2><p>{currentReport.aiLeadershipSummary}</p></section> : null}
+    <div className="grid">{aiAnalyses.map((analysis) => {
+      const ai = analysis.aiExtraction!;
+      return <div className="card aiCard" key={analysis.id}>
+        <div className="row spread"><div><h3>{analysis.name}</h3><p className="muted">{analysis.url}</p></div><Badge tone="green">AI confidence: {ai.rawConfidence}</Badge></div>
+        <div className="grid cols3" style={{ marginTop: 18 }}>
+          <ListBlock title="Services mentioned" items={ai.servicesMentioned} />
+          <ListBlock title="Benefits mentioned" items={ai.benefitsMentioned} />
+          <ListBlock title="Claims made" items={ai.claimsMade} />
+          <ListBlock title="Programs offered" items={ai.programsOffered} />
+          <ListBlock title="Proof points" items={ai.proofPoints} />
+          <ListBlock title="Referral calls to action" items={ai.referralCallsToAction} />
+          <ListBlock title="Competitor advantages" items={ai.competitorAdvantages} />
+          <ListBlock title="Andwell advantages" items={ai.andwellAdvantages} />
+          <ListBlock title="Review risks" items={ai.reviewRisks} />
+        </div>
+        <Panel title="AI service line depth"><div className="grid cols2">{ai.serviceLineDepth.map((item) => <div className="scoreCard" key={`${analysis.id}${item.serviceLine}`}><div className="row spread"><h3>{item.serviceLine}</h3><Badge tone={item.reviewRisk === 'High' ? 'red' : item.reviewRisk === 'Medium' ? 'amber' : 'green'}>{item.reviewRisk} review risk</Badge></div><p>{item.summary}</p><div className="scoreGrid"><Stat label="Depth" value={`${item.depthScore}%`} /><Stat label="Evidence" value={item.evidenceStrength} /></div></div>)}</div></Panel>
+        <Panel title="AI sales battlecards"><div className="grid cols2">{ai.salesBattlecards.map((card) => <div className="battleCard" key={`${analysis.id}${card.serviceLine}`}><h3>{card.serviceLine}</h3><p><strong>Lead with:</strong> {card.leadWith}</p><p><strong>Referral question:</strong> {card.referralQuestion}</p><p><strong>Objection response:</strong> {card.objectionResponse}</p><div className="notice"><strong>Safe language</strong><br />{card.safeSalesLanguage}</div><div className="error"><strong>Do not say</strong><br />{card.doNotSayLanguage}</div></div>)}</div></Panel>
+      </div>;
+    })}</div>
   </>;
 }
 
@@ -232,16 +269,16 @@ function PromptEngine() {
 }
 
 function Intake({ competitors, setCompetitors, urlInput, setUrlInput, addUrls, saveCompetitors, runAnalysis, busy }: { competitors: CompetitorInput[]; setCompetitors: (items: CompetitorInput[]) => void; urlInput: string; setUrlInput: (value: string) => void; addUrls: () => void; saveCompetitors: () => void; runAnalysis: () => void; busy: boolean }) {
-  return <><section className="section"><div><h1>Competitor Intake</h1><p>Paste up to 25 competitor websites. The app saves the competitor library, crawls public pages, and creates service line and subservice findings.</p></div><Badge>{competitors.length} of 25 selected</Badge></section><Panel title="Add Competitor URLs"><textarea className="textarea largeInput" value={urlInput} onChange={(event) => setUrlInput(event.target.value)} placeholder="https://competitorone.org\nhttps://competitortwo.org" /><div className="row"><button className="btn" onClick={addUrls}>Add URLs</button><button className="btn" disabled={busy} onClick={saveCompetitors}>Save library</button><button className="btn primary" disabled={busy} onClick={runAnalysis}>{busy ? 'Working' : 'Run and save intelligence report'}</button></div></Panel><div className="grid cols2">{competitors.map((competitor, index) => <Panel key={`${competitor.url}${index}`} title={competitor.name || 'Competitor'}><p>{competitor.url}</p><Badge>{competitor.market || 'Needs review'}</Badge><br /><button className="btn danger" onClick={() => setCompetitors(competitors.filter((_, i) => i !== index))}>Remove</button></Panel>)}</div></>;
+  return <><section className="section"><div><h1>Competitor Intake</h1><p>Paste up to 25 competitor websites. The backend crawls public pages, runs SSRF safe validation, applies rule based analysis, then uses OpenAI for structured extraction when configured.</p></div><Badge>{competitors.length} of 25 selected</Badge></section><Panel title="Add Competitor URLs"><textarea className="textarea largeInput" value={urlInput} onChange={(event) => setUrlInput(event.target.value)} placeholder="https://competitorone.org\nhttps://competitortwo.org" /><div className="row"><button className="btn" onClick={addUrls}>Add URLs</button><button className="btn" disabled={busy} onClick={saveCompetitors}>Save library</button><button className="btn primary" disabled={busy} onClick={runAnalysis}>{busy ? 'Running crawler and AI extraction' : 'Run AI enhanced analysis'}</button></div></Panel><div className="grid cols2">{competitors.map((competitor, index) => <Panel key={`${competitor.url}${index}`} title={competitor.name || 'Competitor'}><p>{competitor.url}</p><Badge>{competitor.market || 'Needs review'}</Badge><br /><button className="btn danger" onClick={() => setCompetitors(competitors.filter((_, i) => i !== index))}>Remove</button></Panel>)}</div></>;
 }
 
 function Matrix({ currentReport }: { currentReport: IntelligenceReport | null }) {
   const findings = currentReport?.allFindings || [];
-  return <><section className="section"><div><h1>Comparison Matrix</h1><p>Service line and subservice level comparison using public evidence language and review safeguards.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to populate the matrix.</p></Panel> : <div className="tableWrap proTable"><table><thead><tr><th>Competitor</th><th>Service line</th><th>Status</th><th>Depth</th><th>Safe sales wording</th></tr></thead><tbody>{findings.map((finding) => <tr key={finding.id}><td>{finding.competitorName}</td><td><strong>{finding.serviceLine}</strong></td><td><Badge>{finding.competitorStatus}</Badge></td><td>{finding.subserviceDepthScore}%</td><td>{finding.safeSalesWording}</td></tr>)}</tbody></table></div>}</>;
+  return <><section className="section"><div><h1>Comparison Matrix</h1><p>Service line and subservice level comparison using public evidence language, AI interpretation, and review safeguards.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to populate the matrix.</p></Panel> : <div className="tableWrap proTable"><table><thead><tr><th>Competitor</th><th>Service line</th><th>Status</th><th>Depth</th><th>Safe sales wording</th></tr></thead><tbody>{findings.map((finding) => <tr key={finding.id}><td>{finding.competitorName}</td><td><strong>{finding.serviceLine}</strong></td><td><Badge>{finding.competitorStatus}</Badge></td><td>{finding.subserviceDepthScore}%</td><td>{finding.safeSalesWording}</td></tr>)}</tbody></table></div>}</>;
 }
 
 function Battlecards({ currentReport }: { currentReport: IntelligenceReport | null }) {
-  return <><section className="section"><div><h1>Battlecards</h1><p>Field usable positioning by competitor. Built from evidence, safe language, and review status.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to generate battlecards.</p></Panel> : <div className="grid cols2">{currentReport.analyses.map((analysis) => <div className="battleCard" key={analysis.id}><div className="row spread"><h3>{analysis.name}</h3><Badge tone={analysis.score.threatLevel === 'Strategic threat' ? 'red' : 'amber'}>{analysis.score.threatLevel}</Badge></div><p>{analysis.score.executiveReadout}</p><div className="battleSection"><strong>Lead with</strong>{analysis.score.leadWith.map((item) => <span key={item}>{item}</span>)}</div><div className="battleSection"><strong>Needs review</strong>{analysis.score.needsReview.length ? analysis.score.needsReview.map((item) => <span key={item}>{item}</span>) : <span>No major review flags</span>}</div><div className="notice"><strong>Field rule</strong><br />Do not say they do not offer a service. Use not found publicly unless approved evidence confirms otherwise.</div></div>)}</div>}</>;
+  return <><section className="section"><div><h1>Battlecards</h1><p>Field usable positioning by competitor. Uses AI battlecards when available and rule based battlecards as a fallback.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to generate battlecards.</p></Panel> : <div className="grid cols2">{currentReport.analyses.map((analysis) => <div className="battleCard" key={analysis.id}><div className="row spread"><h3>{analysis.name}</h3><Badge tone={analysis.aiEnhanced ? 'green' : 'amber'}>{analysis.aiEnhanced ? 'AI enhanced' : analysis.score.threatLevel}</Badge></div><p>{analysis.aiExtraction?.leadershipSummary || analysis.score.executiveReadout}</p><div className="battleSection"><strong>Lead with</strong>{analysis.aiExtraction?.salesBattlecards?.slice(0, 4).map((item) => <span key={item.serviceLine}>{item.leadWith}</span>) || analysis.score.leadWith.map((item) => <span key={item}>{item}</span>)}</div><div className="battleSection"><strong>Needs review</strong>{analysis.score.needsReview.length ? analysis.score.needsReview.map((item) => <span key={item}>{item}</span>) : <span>No major review flags</span>}</div><div className="notice"><strong>Field rule</strong><br />Do not say they do not offer a service. Use not found publicly unless approved evidence confirms otherwise.</div></div>)}</div>}</>;
 }
 
 function Reports({ reports, currentReport, loadReport, exportJson, refreshServerState, busy }: { reports: ReportSummary[]; currentReport: IntelligenceReport | null; loadReport: (id: string) => void; exportJson: () => void; refreshServerState: () => void; busy: boolean }) {
@@ -257,5 +294,5 @@ function Catalog() {
 }
 
 function Diagnostics({ diagnostics, runDiagnostics, busy }: { diagnostics: ApiCheck[]; runDiagnostics: () => void; busy: boolean }) {
-  return <><section className="section"><div><h1>Diagnostics</h1><p>Confirms whether Hostinger is returning JSON or HTML for API routes.</p></div><button className="btn primary" disabled={busy} onClick={runDiagnostics}>Run diagnostics</button></section><div className="grid">{diagnostics.map((item) => <Panel key={item.route} title={item.route}><div className="row"><Badge tone={item.ok ? 'green' : 'red'}>{item.ok ? 'OK' : 'Problem'}</Badge><Badge>{item.status}</Badge></div><p>{item.message}</p><p className="muted">{item.preview}</p></Panel>)}</div></>;
+  return <><section className="section"><div><h1>Diagnostics</h1><p>Confirms whether Hostinger is returning JSON or HTML for API routes. `/api/analyze` will also report whether OpenAI extraction is configured.</p></div><button className="btn primary" disabled={busy} onClick={runDiagnostics}>Run diagnostics</button></section><div className="grid">{diagnostics.map((item) => <Panel key={item.route} title={item.route}><div className="row"><Badge tone={item.ok ? 'green' : 'red'}>{item.ok ? 'OK' : 'Problem'}</Badge><Badge>{item.status}</Badge></div><p>{item.message}</p><p className="muted">{item.preview}</p></Panel>)}</div></>;
 }
