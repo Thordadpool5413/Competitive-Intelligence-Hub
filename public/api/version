@@ -1,0 +1,7 @@
+{
+  "ok": true,
+  "route": "/api/version",
+  "servedBy": "static public fallback",
+  "version": "static-fallback-2026-05-17",
+  "message": "If you see this, Hostinger is serving static public files. The Node server may not be running through server.js."
+}
