@@ -17,6 +17,61 @@ export type CompetitorInput = {
   notes?: string;
 };
 
+export type AIServiceLineDepth = {
+  serviceLine: string;
+  depthScore: number;
+  evidenceStrength: 'Strong' | 'Moderate' | 'Weak' | 'Not found';
+  summary: string;
+  competitorAdvantages: string[];
+  andwellAdvantages: string[];
+  proofPoints: string[];
+  referralCallsToAction: string[];
+  reviewRisk: 'Low' | 'Medium' | 'High';
+};
+
+export type AISubserviceDepth = {
+  serviceLine: string;
+  subservice: string;
+  status: Status;
+  confidence: Confidence;
+  evidenceExcerpt: string;
+  sourceUrl?: string;
+  safeSalesLanguage: string;
+  doNotSayLanguage: string;
+};
+
+export type AISalesBattlecard = {
+  serviceLine: string;
+  leadWith: string;
+  referralQuestion: string;
+  objectionResponse: string;
+  proofPoint: string;
+  safeSalesLanguage: string;
+  doNotSayLanguage: string;
+};
+
+export type AICompetitorExtraction = {
+  providerName: string;
+  aiModel: string;
+  generatedAt: string;
+  servicesMentioned: string[];
+  benefitsMentioned: string[];
+  claimsMade: string[];
+  programsOffered: string[];
+  proofPoints: string[];
+  referralCallsToAction: string[];
+  serviceLineDepth: AIServiceLineDepth[];
+  subserviceDepth: AISubserviceDepth[];
+  competitorAdvantages: string[];
+  andwellAdvantages: string[];
+  safeSalesLanguage: string[];
+  doNotSayLanguage: string[];
+  reviewRisks: string[];
+  leadershipSummary: string;
+  salesBattlecards: AISalesBattlecard[];
+  rawConfidence: 'High' | 'Medium' | 'Low';
+};
+
 export type SubserviceFinding = {
   id: string;
   competitorId: string;
@@ -87,6 +142,8 @@ export type CompetitorAnalysis = {
   findings: Finding[];
   subserviceFindings: SubserviceFinding[];
   score: CompetitorScore;
+  aiExtraction?: AICompetitorExtraction;
+  aiEnhanced?: boolean;
 };
 
 export type ExecutiveInsight = {
@@ -115,4 +172,7 @@ export type IntelligenceReport = {
   allFindings: Finding[];
   allSubserviceFindings: SubserviceFinding[];
   crawlErrors: { url: string; error: string }[];
+  aiEnabled?: boolean;
+  aiModel?: string;
+  aiLeadershipSummary?: string;
 };
