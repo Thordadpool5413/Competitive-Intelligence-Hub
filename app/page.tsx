@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { andwellCatalog } from '@/lib/andwell';
-import { expertPromptModules, fullCompetitiveIntelligenceInstruction } from '@/lib/expert-prompts';
-import type { CompetitorInput, IntelligenceReport } from '@/lib/types';
+import { andwellCatalog } from '../lib/andwell';
+import { expertPromptModules, fullCompetitiveIntelligenceInstruction } from '../lib/expert-prompts';
+import type { CompetitorInput, IntelligenceReport } from '../lib/types';
 
 type View = 'dashboard' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
 type ReportSummary = { id: string; generatedAt: string; competitorsAnalyzed: number; pagesReviewed: number; potentialAndwellAdvantages: number; humanReviewItems: number; competitors: string[]; executiveSummary: string };
