@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { andwellCatalog } from '@/lib/andwell';
 import { expertPromptModules, fullCompetitiveIntelligenceInstruction } from '@/lib/expert-prompts';
 import type { CompetitorInput, IntelligenceReport } from '@/lib/types';
@@ -10,14 +10,14 @@ type ReportSummary = { id: string; generatedAt: string; competitorsAnalyzed: num
 type ApiCheck = { route: string; ok: boolean; status: number; message: string; preview?: string };
 
 const nav: { key: View; label: string; note: string }[] = [
-  { key: 'dashboard', label: 'Command Center', note: 'CEO and leader view' },
-  { key: 'prompt', label: 'Prompt Engine', note: 'Expert instructions' },
+  { key: 'dashboard', label: 'Command Center', note: 'Executive snapshot' },
+  { key: 'prompt', label: 'Prompt Engine', note: 'Expert methodology' },
   { key: 'intake', label: 'Competitor Intake', note: 'Add up to 25 URLs' },
   { key: 'matrix', label: 'Comparison Matrix', note: 'Service and subservice view' },
-  { key: 'battlecards', label: 'Battlecards', note: 'Sales ready guidance' },
+  { key: 'battlecards', label: 'Battlecards', note: 'Sales positioning' },
   { key: 'reports', label: 'Reports', note: 'Stored intelligence' },
-  { key: 'ask', label: 'Ask the Hub', note: 'Ask against evidence' },
-  { key: 'catalog', label: 'Andwell Catalog', note: 'Baseline service truth' },
+  { key: 'ask', label: 'Ask the Hub', note: 'Evidence based answers' },
+  { key: 'catalog', label: 'Andwell Catalog', note: 'Baseline truth' },
   { key: 'diagnostics', label: 'Diagnostics', note: 'Deployment proof' }
 ];
 
@@ -26,19 +26,31 @@ function normalizeUrl(url: string) {
 }
 
 function nameFromUrl(url: string) {
-  try { return new URL(normalizeUrl(url)).hostname.replace(/^www\./, '').split('.')[0].replace(/\b\w/g, (letter) => letter.toUpperCase()); } catch { return 'Competitor'; }
+  try {
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, '').split('.')[0].replace(/\b\w/g, (letter) => letter.toUpperCase());
+  } catch {
+    return 'Competitor';
+  }
 }
 
 function parseJsonSafely<T>(text: string, url: string): T {
   const trimmed = text.trim();
   if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<')) {
-    throw new Error(`The request to ${url} returned HTML instead of JSON. Hostinger is serving a fallback page, stale build, or static site instead of the Node.js server. Open /api/version directly. If it is not JSON, Hostinger is not running server.js.`);
+    throw new Error(`Hostinger returned HTML for ${url}, not JSON. This means the Node.js app or API route is not being served correctly. Open Diagnostics and test /api/version first.`);
   }
-  try { return JSON.parse(text) as T; } catch { throw new Error(`The request to ${url} did not return valid JSON. Response started with: ${text.slice(0, 160).replace(/\s+/g, ' ')}`); }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`The response from ${url} was not valid JSON. First characters: ${text.slice(0, 160).replace(/\s+/g, ' ')}`);
+  }
 }
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...options, headers: { accept: 'application/json', ...(options?.headers || {}) }, cache: 'no-store' });
+  const response = await fetch(url, {
+    ...options,
+    headers: { accept: 'application/json', ...(options?.headers || {}) },
+    cache: 'no-store'
+  });
   const text = await response.text();
   const data = parseJsonSafely<{ error?: string } & T>(text, url);
   if (!response.ok) throw new Error(data.error || `Request failed with status ${response.status}.`);
@@ -81,19 +93,33 @@ export default function Page() {
     reviewItems: currentReport?.humanReviewItems || 0
   }), [competitors, reports, currentReport]);
 
-  useEffect(() => {
-    try { ['andwellReports', 'andwellReport', 'andwellCompetitiveReports', 'competitiveIntelligenceReports'].forEach((key) => { window.localStorage.removeItem(key); window.sessionStorage.removeItem(key); }); } catch {}
-    void refreshServerState();
-  }, []);
+  function clearLegacyBrowserStorage() {
+    try {
+      ['andwellReports', 'andwellReport', 'andwellCompetitiveReports', 'competitiveIntelligenceReports'].forEach((key) => {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.removeItem(key);
+      });
+      setNotice('Legacy browser report storage cleared.');
+    } catch {
+      setNotice('Browser storage was unavailable, but the app does not require local report storage.');
+    }
+  }
 
   async function refreshServerState() {
+    setBusy(true);
     setError('');
+    setNotice('');
     try {
       const competitorResponse = await api<{ competitors: CompetitorInput[] }>('/api/competitors');
       const reportResponse = await api<{ reports: ReportSummary[] }>('/api/reports');
       setCompetitors(competitorResponse.competitors || []);
       setReports(reportResponse.reports || []);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load server state.'); }
+      setNotice('Server state loaded successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load server state.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function addUrls() {
@@ -120,7 +146,6 @@ export default function Page() {
       setCurrentReport(report);
       setNotice('Analysis completed and saved on the server.');
       setView('dashboard');
-      await refreshServerState();
     } catch (err) { setError(err instanceof Error ? err.message : 'Analysis failed.'); } finally { setBusy(false); }
   }
 
@@ -150,8 +175,9 @@ export default function Page() {
       try {
         const response = await fetch(route, { headers: { accept: 'application/json' }, cache: 'no-store' });
         const text = await response.text();
-        const isHtml = text.trim().startsWith('<');
-        results.push({ route, ok: response.ok && !isHtml, status: response.status, message: isHtml ? 'Returned HTML instead of JSON' : 'Returned JSON or text', preview: text.slice(0, 150).replace(/\s+/g, ' ') });
+        const trimmed = text.trim();
+        const isHtml = trimmed.startsWith('<');
+        results.push({ route, ok: response.ok && !isHtml, status: response.status, message: isHtml ? 'Returned HTML instead of JSON' : 'Returned JSON or text', preview: text.slice(0, 160).replace(/\s+/g, ' ') });
       } catch (err) { results.push({ route, ok: false, status: 0, message: err instanceof Error ? err.message : 'Request failed' }); }
     }
     setDiagnostics(results); setBusy(false);
@@ -170,16 +196,16 @@ export default function Page() {
       <nav className="nav proNav">{nav.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => setView(item.key)}><strong>{item.label}</strong><small>{item.note}</small></button>)}</nav>
     </aside>
     <main className="main proMain">
-      <header className="head proHead"><div><small>Production App</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><button className="btn" onClick={refreshServerState}>Refresh</button><button className="btn" onClick={() => setView('diagnostics')}>Diagnostics</button></div></header>
+      <header className="head proHead"><div><small>Stable Build</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><button className="btn" disabled={busy} onClick={refreshServerState}>Load Server Data</button><button className="btn" onClick={() => setView('diagnostics')}>Diagnostics</button></div></header>
       <div className="content proContent">
         {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
         {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
-        {view === 'dashboard' && <Dashboard stats={stats} currentReport={currentReport} setView={setView} exportJson={exportJson} />}
+        {view === 'dashboard' && <Dashboard stats={stats} currentReport={currentReport} setView={setView} exportJson={exportJson} clearLegacyBrowserStorage={clearLegacyBrowserStorage} />}
         {view === 'prompt' && <PromptEngine />}
         {view === 'intake' && <Intake competitors={competitors} setCompetitors={setCompetitors} urlInput={urlInput} setUrlInput={setUrlInput} addUrls={addUrls} saveCompetitors={saveCompetitors} runAnalysis={runAnalysis} busy={busy} />}
         {view === 'matrix' && <Matrix currentReport={currentReport} />}
         {view === 'battlecards' && <Battlecards currentReport={currentReport} />}
-        {view === 'reports' && <Reports reports={reports} currentReport={currentReport} loadReport={loadReport} exportJson={exportJson} busy={busy} />}
+        {view === 'reports' && <Reports reports={reports} currentReport={currentReport} loadReport={loadReport} exportJson={exportJson} refreshServerState={refreshServerState} busy={busy} />}
         {view === 'ask' && <AskHub question={question} setQuestion={setQuestion} askHub={askHub} answer={answer} busy={busy} currentReport={currentReport} />}
         {view === 'catalog' && <Catalog />}
         {view === 'diagnostics' && <Diagnostics diagnostics={diagnostics} runDiagnostics={runDiagnostics} busy={busy} />}
@@ -188,18 +214,18 @@ export default function Page() {
   </div>;
 }
 
-function Dashboard({ stats, currentReport, setView, exportJson }: { stats: Record<string, number>; currentReport: IntelligenceReport | null; setView: (view: View) => void; exportJson: () => void }) {
+function Dashboard({ stats, currentReport, setView, exportJson, clearLegacyBrowserStorage }: { stats: Record<string, number>; currentReport: IntelligenceReport | null; setView: (view: View) => void; exportJson: () => void; clearLegacyBrowserStorage: () => void }) {
   return <>
-    <section className="hero proHero"><Badge tone="dark">Executive ready</Badge><h1>See what Andwell does, what competitors publicly say they do, where Andwell appears stronger, and what sales can safely say.</h1><p>This hub is designed for CEOs, COOs, sales leaders, managers, and reps. It connects website evidence, Andwell service depth, competitor claims, review governance, and sales positioning in one workflow.</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run competitor analysis</button><button className="btn" onClick={() => setView('prompt')}>Review prompt engine</button></div></section>
-    <div className="grid cols4"><Stat label="Competitors" value={stats.competitors} hint="Saved library" /><Stat label="Stored reports" value={stats.reports} hint="Server side" /><Stat label="Service lines" value={stats.serviceLines} hint="Andwell baseline" /><Stat label="Subservices" value={stats.subservices} hint="Capability depth" /></div>
-    {currentReport ? <Panel title="Current Executive Summary" className="featurePanel"><p>{currentReport.executiveSummary}</p><div className="row"><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><Badge>{stats.reviewItems} review items</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel> : <Panel title="No report loaded yet"><p>Load a stored report or run a new analysis. The app stores reports on the server, not in browser storage.</p></Panel>}
+    <section className="hero proHero"><Badge tone="dark">Stable executive build</Badge><h1>Competitive intelligence that renders first, then connects to the backend safely.</h1><p>This version avoids startup API crashes. The interface loads immediately, diagnostics prove whether Hostinger is serving JSON, and analysis runs only when the API layer is confirmed.</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run competitor analysis</button><button className="btn" onClick={() => setView('diagnostics')}>Run diagnostics</button><button className="btn" onClick={clearLegacyBrowserStorage}>Clear browser cache keys</button></div></section>
+    <div className="grid cols4"><Stat label="Competitors" value={stats.competitors} hint="Loaded or entered" /><Stat label="Stored reports" value={stats.reports} hint="Server side" /><Stat label="Service lines" value={stats.serviceLines} hint="Andwell baseline" /><Stat label="Subservices" value={stats.subservices} hint="Capability depth" /></div>
+    {currentReport ? <Panel title="Current Executive Summary" className="featurePanel"><p>{currentReport.executiveSummary}</p><div className="row"><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><Badge>{stats.reviewItems} review items</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel> : <Panel title="No report loaded yet"><p>The app is ready. Use Diagnostics first if Hostinger has been returning HTML. Then run a new analysis or load stored reports.</p></Panel>}
     {currentReport?.competitorScores?.length ? <Panel title="Competitor Intelligence Scoreboard"><div className="grid cols2">{currentReport.competitorScores.map((score) => <div className="scoreCard proScore" key={score.competitorId}><div className="row spread"><h3>{score.competitorName}</h3><Badge tone={score.threatLevel === 'Strategic threat' ? 'red' : 'amber'}>{score.threatLevel}</Badge></div><p>{score.executiveReadout}</p><div className="scoreGrid"><Stat label="Overlap" value={`${score.serviceLineMatchScore}%`} /><Stat label="Depth" value={`${score.subserviceDepthScore}%`} /><Stat label="Andwell advantage" value={`${score.andwellDifferentiationScore}%`} /><Stat label="Review risk" value={`${score.reviewRiskScore}%`} /></div></div>)}</div></Panel> : null}
   </>;
 }
 
 function PromptEngine() {
   return <>
-    <section className="section"><div><h1>Expert Prompt Engine</h1><p>The full instruction layer that tells the app how to think like a healthcare competitive intelligence analyst, not a generic website scraper.</p></div><Badge tone="blue">Governed intelligence</Badge></section>
+    <section className="section"><div><h1>Expert Prompt Engine</h1><p>The instruction layer for healthcare competitive intelligence, service extraction, sales positioning, and review governance.</p></div><Badge tone="blue">Governed intelligence</Badge></section>
     <Panel title="Master Intelligence Instruction" className="featurePanel"><p>{fullCompetitiveIntelligenceInstruction}</p></Panel>
     <div className="grid cols2">{expertPromptModules.map((module) => <div className="promptCard" key={module.id}><Badge tone="dark">{module.id}</Badge><h3>{module.title}</h3><p>{module.purpose}</p><div className="promptBlock"><strong>Instructions</strong>{module.instructions.map((item) => <span key={item}>{item}</span>)}</div><div className="promptBlock output"><strong>Required output</strong>{module.requiredOutput.map((item) => <span key={item}>{item}</span>)}</div></div>)}</div>
   </>;
@@ -218,8 +244,8 @@ function Battlecards({ currentReport }: { currentReport: IntelligenceReport | nu
   return <><section className="section"><div><h1>Battlecards</h1><p>Field usable positioning by competitor. Built from evidence, safe language, and review status.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to generate battlecards.</p></Panel> : <div className="grid cols2">{currentReport.analyses.map((analysis) => <div className="battleCard" key={analysis.id}><div className="row spread"><h3>{analysis.name}</h3><Badge tone={analysis.score.threatLevel === 'Strategic threat' ? 'red' : 'amber'}>{analysis.score.threatLevel}</Badge></div><p>{analysis.score.executiveReadout}</p><div className="battleSection"><strong>Lead with</strong>{analysis.score.leadWith.map((item) => <span key={item}>{item}</span>)}</div><div className="battleSection"><strong>Needs review</strong>{analysis.score.needsReview.length ? analysis.score.needsReview.map((item) => <span key={item}>{item}</span>) : <span>No major review flags</span>}</div><div className="notice"><strong>Field rule</strong><br />Do not say they do not offer a service. Use not found publicly unless approved evidence confirms otherwise.</div></div>)}</div>}</>;
 }
 
-function Reports({ reports, currentReport, loadReport, exportJson, busy }: { reports: ReportSummary[]; currentReport: IntelligenceReport | null; loadReport: (id: string) => void; exportJson: () => void; busy: boolean }) {
-  return <><section className="section"><div><h1>Reports</h1><p>Stored server side reports and exportable intelligence summaries.</p></div><button className="btn" disabled={!currentReport} onClick={exportJson}>Export current JSON</button></section><div className="grid">{reports.map((report) => <Panel key={report.id} title={report.competitors?.join(', ') || 'Stored report'}><p>{new Date(report.generatedAt).toLocaleString()} | {report.pagesReviewed} pages | {report.humanReviewItems} review items</p><p>{report.executiveSummary}</p><button className="btn primary" disabled={busy} onClick={() => loadReport(report.id)}>Load report</button></Panel>)}</div></>;
+function Reports({ reports, currentReport, loadReport, exportJson, refreshServerState, busy }: { reports: ReportSummary[]; currentReport: IntelligenceReport | null; loadReport: (id: string) => void; exportJson: () => void; refreshServerState: () => void; busy: boolean }) {
+  return <><section className="section"><div><h1>Reports</h1><p>Stored server side reports and exportable intelligence summaries.</p></div><div className="row"><button className="btn" disabled={busy} onClick={refreshServerState}>Load reports</button><button className="btn" disabled={!currentReport} onClick={exportJson}>Export current JSON</button></div></section><div className="grid">{reports.map((report) => <Panel key={report.id} title={report.competitors?.join(', ') || 'Stored report'}><p>{new Date(report.generatedAt).toLocaleString()} | {report.pagesReviewed} pages | {report.humanReviewItems} review items</p><p>{report.executiveSummary}</p><button className="btn primary" disabled={busy} onClick={() => loadReport(report.id)}>Load report</button></Panel>)}</div></>;
 }
 
 function AskHub({ question, setQuestion, askHub, answer, busy, currentReport }: { question: string; setQuestion: (value: string) => void; askHub: () => void; answer: string; busy: boolean; currentReport: IntelligenceReport | null }) {
