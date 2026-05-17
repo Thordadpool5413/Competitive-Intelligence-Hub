@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readStore, saveReview } from '@/lib/store';
-import type { ReviewStatus } from '@/lib/types';
+import { readStore, saveReview } from '../../../lib/store';
+import type { ReviewStatus } from '../../../lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
