@@ -11,6 +11,7 @@ const handle = app.getRequestHandler();
 
 const dataDir = process.env.CIH_DATA_DIR || path.join(process.cwd(), '.data');
 const storeFile = process.env.CIH_STORE_FILE || path.join(dataDir, 'competitive-intelligence-hub.json');
+const buildVersion = 'server-fallback-2026-05-17-v2';
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload, null, 2);
@@ -75,8 +76,9 @@ function fallbackReport(competitors, crawlErrors = []) {
   const now = new Date().toISOString();
   const analyses = competitors.map((competitor, index) => {
     const name = competitor.name || nameFromUrl(competitor.url);
+    const competitorId = `fallback_competitor_${Date.now()}_${index}`;
     return {
-      id: `fallback_competitor_${Date.now()}_${index}`,
+      id: competitorId,
       name,
       url: normalizeUrl(competitor.url),
       market: competitor.market || 'Not provided',
@@ -90,7 +92,7 @@ function fallbackReport(competitors, crawlErrors = []) {
       findings: [],
       subserviceFindings: [],
       score: {
-        competitorId: `fallback_competitor_${Date.now()}_${index}`,
+        competitorId,
         competitorName: name,
         serviceLineMatchScore: 0,
         subserviceDepthScore: 0,
@@ -119,13 +121,13 @@ function fallbackReport(competitors, crawlErrors = []) {
     matchedServiceFindings: 0,
     potentialAndwellAdvantages: 0,
     humanReviewItems: competitors.length,
-    executiveSummary: 'The direct Node fallback returned JSON successfully, which prevents the browser from receiving an HTML error page. Full intelligence findings require the Next.js API routes to be served by Hostinger after redeploy.',
+    executiveSummary: 'The direct Node fallback returned JSON successfully. Full intelligence findings require the Next.js API routes to be served by Hostinger after redeploy.',
     executiveInsights: [{
       title: 'Deployment routing check needed',
       priority: 'High',
       audience: 'Admin',
       summary: 'The server fallback handled the request. This confirms Node is responding with JSON, but the full Next.js analysis route should be verified.',
-      action: 'Redeploy from GitHub, run npm install && npm run build, start with npm start, then test /api/diagnostics and /api/analyze.'
+      action: 'Redeploy from GitHub, run npm install && npm run build, start with npm start, then test /api/version and /api/analyze.'
     }],
     competitorScores: analyses.map((analysis) => analysis.score),
     analyses,
@@ -139,11 +141,12 @@ async function handleFallbackApi(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
-  if (pathname === '/api/health' || pathname === '/api/diagnostics' || pathname === '/api/analyze/status') {
+  if (pathname === '/api/version' || pathname === '/api/health' || pathname === '/api/diagnostics' || pathname === '/api/analyze/status') {
     return sendJson(res, 200, {
       ok: true,
       route: pathname,
       servedBy: 'server.js direct JSON fallback',
+      version: buildVersion,
       message: 'Node server is running and returning JSON.',
       checkedAt: new Date().toISOString()
     });
@@ -154,6 +157,7 @@ async function handleFallbackApi(req, res) {
       ok: true,
       route: '/api/analyze',
       servedBy: 'server.js direct JSON fallback',
+      version: buildVersion,
       message: 'Analyze endpoint is reachable. POST competitor URLs to run analysis. If fallback handles POST, redeploy Next.js API routes for full findings.',
       checkedAt: new Date().toISOString()
     });
@@ -171,7 +175,7 @@ async function handleFallbackApi(req, res) {
       store.competitors = [...byUrl.values()].slice(0, 500);
       await writeStore(store);
     }
-    return sendJson(res, 200, { competitors: store.competitors || [] });
+    return sendJson(res, 200, { competitors: store.competitors || [], servedBy: 'server.js direct JSON fallback', version: buildVersion });
   }
 
   if (pathname === '/api/reports') {
@@ -183,6 +187,8 @@ async function handleFallbackApi(req, res) {
       return sendJson(res, 200, { report });
     }
     return sendJson(res, 200, {
+      servedBy: 'server.js direct JSON fallback',
+      version: buildVersion,
       reports: (store.reports || []).map((report) => ({
         id: report.id,
         generatedAt: report.generatedAt,
@@ -216,7 +222,7 @@ async function handleFallbackApi(req, res) {
       await writeStore(store);
       return sendJson(res, 200, { review });
     }
-    return sendJson(res, 200, { reviews: store.reviews || [] });
+    return sendJson(res, 200, { reviews: store.reviews || [], servedBy: 'server.js direct JSON fallback', version: buildVersion });
   }
 
   if (pathname === '/api/catalog') {
@@ -229,11 +235,11 @@ async function handleFallbackApi(req, res) {
       await writeStore(store);
       return sendJson(res, 200, { override });
     }
-    return sendJson(res, 200, { catalog: [], overrides: store.catalogOverrides || [], servedBy: 'server.js direct JSON fallback' });
+    return sendJson(res, 200, { catalog: [], overrides: store.catalogOverrides || [], servedBy: 'server.js direct JSON fallback', version: buildVersion });
   }
 
   if (pathname === '/api/ask') {
-    if (req.method === 'GET') return sendJson(res, 200, { ok: true, route: '/api/ask', message: 'Ask the Hub endpoint is reachable.' });
+    if (req.method === 'GET') return sendJson(res, 200, { ok: true, route: '/api/ask', servedBy: 'server.js direct JSON fallback', version: buildVersion, message: 'Ask the Hub endpoint is reachable.' });
     const store = await ensureStore();
     const latest = (store.reports || [])[0];
     if (!latest) return sendJson(res, 200, { answer: 'No stored intelligence report was found yet. Run an analysis first.', evidence: [], confidence: 'Needs review' });
@@ -277,7 +283,8 @@ app.prepare().then(() => {
       if (req.url && req.url.startsWith('/api/')) {
         return sendJson(res, 500, {
           error: error instanceof Error ? error.message : 'Unknown server error',
-          servedBy: 'server.js direct JSON error handler'
+          servedBy: 'server.js direct JSON error handler',
+          version: buildVersion
         });
       }
       res.statusCode = 500;
