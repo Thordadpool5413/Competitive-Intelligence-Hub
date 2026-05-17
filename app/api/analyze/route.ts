@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { crawlSite } from '@/lib/crawler';
-import { analyzeCompetitor, buildReport } from '@/lib/analysis';
-import { saveReport } from '@/lib/store';
-import type { CompetitorInput, CrawledPage } from '@/lib/types';
+import { crawlSite } from '../../../lib/crawler';
+import { analyzeCompetitor, buildReport } from '../../../lib/analysis';
+import { saveReport } from '../../../lib/store';
+import type { CompetitorInput, CrawledPage } from '../../../lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
