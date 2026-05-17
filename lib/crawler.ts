@@ -12,10 +12,54 @@ function normalize(url: string, base?: string): string | null {
   try {
     const parsed = new URL(url, base);
     parsed.hash = '';
+    parsed.username = '';
+    parsed.password = '';
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
     return parsed.toString().replace(/\/$/, '/');
   } catch {
     return null;
+  }
+}
+
+function cleanHost(hostname: string) {
+  return hostname.toLowerCase().trim().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '');
+}
+
+function blockedIPv4(host: string) {
+  const parts = cleanHost(host).split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = parts;
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+function blockedIPv6(host: string) {
+  const value = cleanHost(host);
+  if (!value.includes(':')) return false;
+  if (value.includes('%')) return true;
+  if (value === '::' || value === '::1' || value === '0:0:0:0:0:0:0:1') return true;
+  if (/^fe[89ab]/i.test(value)) return true;
+  if (/^f[cd]/i.test(value)) return true;
+  const mapped = value.match(/(?:^|:)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i)?.[1];
+  return mapped ? blockedIPv4(mapped) : false;
+}
+
+export function isSafePublicTarget(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const host = cleanHost(parsed.hostname);
+    if (!host || host === 'localhost') return false;
+    if (host.endsWith('.local') || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.lan')) return false;
+    if (blockedIPv4(host) || blockedIPv6(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function requireSafePublicTarget(url: string) {
+  if (!isSafePublicTarget(url)) {
+    throw new Error('Unsafe crawl target blocked. Enter a public http or https competitor website.');
   }
 }
 
@@ -35,18 +79,30 @@ function scoreUrl(url: string) {
   return score;
 }
 
-async function fetchHtml(url: string) {
+async function fetchHtml(url: string, redirectCount = 0): Promise<string> {
+  requireSafePublicTarget(url);
+  if (redirectCount > 5) throw new Error('Too many redirects while crawling website.');
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(process.env.CRAWL_TIMEOUT_MS || 12000));
   try {
     const res = await fetch(url, {
-      redirect: 'follow',
+      redirect: 'manual',
       signal: controller.signal,
       headers: {
         'user-agent': 'CompetitiveIntelligenceHub/1.0 public healthcare service research',
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     });
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      const next = location ? normalize(location, url) : null;
+      if (!next) throw new Error('Redirect destination was not readable.');
+      requireSafePublicTarget(next);
+      return fetchHtml(next, redirectCount + 1);
+    }
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const type = res.headers.get('content-type') || '';
     if (!type.includes('text/html') && !type.includes('application/xhtml+xml')) return '';
@@ -74,6 +130,7 @@ function linksFromHtml(root: string, html: string) {
     const full = normalize(href, root);
     if (!full || !sameHost(full, root)) return;
     if (full.includes('mailto:') || full.includes('tel:')) return;
+    if (!isSafePublicTarget(full)) return;
     links.add(full);
   });
   return [...links].sort((a, b) => scoreUrl(b) - scoreUrl(a));
@@ -82,6 +139,8 @@ function linksFromHtml(root: string, html: string) {
 export async function crawlSite(startUrl: string, maxPages = 24): Promise<CrawledPage[]> {
   const root = normalize(startUrl);
   if (!root) throw new Error('Invalid URL. Use a complete public website address.');
+  requireSafePublicTarget(root);
+
   const html = await fetchHtml(root);
   if (!html) throw new Error('The website did not return readable public HTML.');
   const pages: CrawledPage[] = [pageFromHtml(root, html)];
