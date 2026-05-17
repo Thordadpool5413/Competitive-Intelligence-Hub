@@ -10,6 +10,15 @@ function normalizeUrl(url: string) {
   return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    route: '/api/analyze',
+    message: 'Analyze API route is active. Use POST with competitor URLs to run analysis.',
+    checkedAt: new Date().toISOString()
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as { competitors?: CompetitorInput[]; maxPagesPerSite?: number };
