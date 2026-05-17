@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readStore } from '@/lib/store';
+import { readStore } from '../../../lib/store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
