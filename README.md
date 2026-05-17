@@ -2,13 +2,28 @@
 
 A Hostinger ready Node.js and Next.js application for Andwell Health Partners competitive service line intelligence.
 
-This app lets a user enter up to 25 competitor website URLs, runs a server side crawl of public pages, compares each competitor against the Andwell service taxonomy, produces service line and subservice matrices, generates gap analysis, builds battlecards, creates talk tracks, shows evidence, supports review status, and exports reports.
+This app lets a user enter up to 25 competitor website URLs, runs a server side crawl of public pages, compares each competitor against the Andwell service taxonomy, produces service line and subservice matrices, generates gap analysis, builds battlecards, creates talk tracks, shows evidence, supports review status, saves intelligence reports, and gives users an Ask the Hub assistant over stored findings.
 
-## Current intelligence upgrade
+## Current V2 foundation upgrade
 
-The app has been upgraded from a basic competitor website scan into a stronger Competitive Intelligence Hub.
+The app has been upgraded from a browser only MVP into a stronger Competitive Intelligence Hub foundation.
 
-New intelligence capabilities include:
+New V2 foundation capabilities include:
+
+1. Server side persistent JSON store for reports, competitors, reviews, and catalog overrides
+2. Stored competitor library through `/api/competitors`
+3. Stored intelligence reports through `/api/reports`
+4. Server saved review decisions through `/api/reviews`
+5. Andwell catalog governance endpoint through `/api/catalog`
+6. Ask the Hub intelligence assistant endpoint through `/api/ask`
+7. Analysis reports automatically save server side after `/api/analyze`
+8. Frontend loads saved competitors, saved reports, and review decisions from the server
+9. Reports view can reload previously stored intelligence reports
+10. Review Center saves approvals, edits, and rejections to server storage
+11. Ask the Hub answers from stored findings, subservice findings, safe wording, and evidence excerpts
+12. `.data` is ignored so local server storage is not committed to GitHub
+
+## Intelligence capabilities
 
 1. True subservice level findings for every Andwell capability
 2. Executive competitor scoring
@@ -20,8 +35,8 @@ New intelligence capabilities include:
 8. Competitor threat level
 9. Executive insights by audience
 10. Competitor profile intelligence
-11. Stronger Gap Finder with service and subservice opportunities
-12. Stronger battlecards with lead with guidance, questions, safe wording, and what not to say
+11. Gap Finder with service and subservice opportunities
+12. Battlecards with lead with guidance, questions, safe wording, and what not to say
 13. Evidence drawer for both service findings and subservice findings
 14. Review Center for both service and subservice findings
 15. Polished dashboard CSS and visual design system
@@ -41,6 +56,24 @@ New intelligence capabilities include:
 11. Human Review Center
 12. JSON, CSV, and HTML export
 13. Safe sales language rules using “Not found publicly” instead of unsupported competitor claims
+14. Stored report library
+15. Stored review workflow
+16. Ask the Hub
+17. Catalog governance API
+
+## API routes
+
+```bash
+/api/health
+/api/diagnostics
+/api/analyze
+/api/analyze/status
+/api/competitors
+/api/reports
+/api/reviews
+/api/catalog
+/api/ask
+```
 
 ## Local development
 
@@ -95,6 +128,7 @@ HOST=0.0.0.0
 PORT=3000
 CRAWL_MAX_PAGES_PER_SITE=24
 CRAWL_TIMEOUT_MS=12000
+CIH_DATA_DIR=.data
 ```
 
 If Hostinger automatically injects a port, use the Hostinger provided port and do not hardcode another value.
@@ -128,6 +162,18 @@ Expected response:
 { "ok": true }
 ```
 
+Also test:
+
+```bash
+/api/diagnostics
+/api/analyze
+/api/reports
+/api/competitors
+/api/ask
+```
+
+The API routes should return JSON. If any API route returns an HTML page, Hostinger is not serving the app as a Node.js Next server.
+
 ## Important sales safety rule
 
 The app intentionally says “Not found publicly” instead of saying a competitor does not offer a service. That wording protects the team from overstating what website evidence can prove.
@@ -136,4 +182,4 @@ The app intentionally says “Not found publicly” instead of saying a competit
 
 The app uses public website evidence. “Not found publicly” means the service or subservice was not clearly found in reviewed public pages. It does not prove the competitor does not provide that service.
 
-The current deployment stores saved reports in browser local storage. A future enterprise version should add a shared database so executives, leaders, and reps see the same approved intelligence across devices.
+The current V2 foundation uses a server side JSON store for persistence. This is a major improvement over browser local storage and works for a single deployed app instance. A future enterprise version should move the store to PostgreSQL or Supabase so multiple servers, authenticated users, audit trails, and long term shared governance are fully supported.
