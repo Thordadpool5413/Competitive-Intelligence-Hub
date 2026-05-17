@@ -1,5 +1,0 @@
-{
-  "competitors": [],
-  "servedBy": "static public fallback",
-  "message": "Static fallback is being served. Node server.js may not be running."
-}
