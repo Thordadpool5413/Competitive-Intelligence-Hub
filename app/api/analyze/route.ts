@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { crawlSite } from '@/lib/crawler';
 import { analyzeCompetitor, buildReport } from '@/lib/analysis';
+import { saveReport } from '@/lib/store';
 import type { CompetitorInput, CrawledPage } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -21,7 +22,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { competitors?: CompetitorInput[]; maxPagesPerSite?: number };
+    const body = await req.json() as { competitors?: CompetitorInput[]; maxPagesPerSite?: number; save?: boolean };
     const competitors = (body.competitors || [])
       .filter((item) => item.url?.trim())
       .slice(0, 25)
@@ -52,7 +53,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json(buildReport(analyses, crawlErrors));
+    const report = buildReport(analyses, crawlErrors);
+    if (body.save !== false) await saveReport(report);
+    return NextResponse.json(report);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unknown analysis error' }, { status: 500 });
   }
