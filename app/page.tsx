@@ -5,7 +5,7 @@ import { andwellCatalog } from '../lib/andwell';
 import { expertPromptModules, fullCompetitiveIntelligenceInstruction } from '../lib/expert-prompts';
 import type { CompetitorInput, IntelligenceReport } from '../lib/types';
 
-type View = 'dashboard' | 'ai' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
+type View = 'dashboard' | 'expert' | 'ai' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
 type RoleView = 'Executive' | 'Sales Leader' | 'Sales Rep' | 'Admin';
 type MatrixFilter = 'all' | 'salesReady' | 'review' | 'advantage' | 'matched';
 type ReportSummary = { id: string; generatedAt: string; competitorsAnalyzed: number; pagesReviewed: number; potentialAndwellAdvantages: number; humanReviewItems: number; competitors: string[]; executiveSummary: string };
@@ -16,6 +16,7 @@ type AskResponse = { answer: string; confidence: string; reportId?: string; ques
 
 const nav: { key: View; label: string; note: string }[] = [
   { key: 'dashboard', label: 'Command Center', note: 'Executive snapshot' },
+  { key: 'expert', label: 'Foremost Expert', note: 'Strategy brain' },
   { key: 'ai', label: 'Extracted Intelligence', note: 'AI evidence output' },
   { key: 'prompt', label: 'Methodology', note: 'Governed logic' },
   { key: 'intake', label: 'Competitor Intake', note: 'Add up to 25 URLs' },
@@ -88,10 +89,10 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 
 function toneForStatus(status?: string): 'neutral' | 'green' | 'amber' | 'red' | 'blue' | 'dark' {
   if (!status) return 'neutral';
-  if (status.includes('Strategic') || status.includes('High') || status.includes('Needs human') || status.includes('Problem')) return 'red';
-  if (status.includes('Moderate') || status.includes('Mentioned') || status.includes('Manager') || status.includes('Unclear')) return 'amber';
+  if (status.includes('Critical') || status.includes('Strategic') || status.includes('High') || status.includes('Needs human') || status.includes('Problem')) return 'red';
+  if (status.includes('Medium') || status.includes('Moderate') || status.includes('Mentioned') || status.includes('Manager') || status.includes('Unclear')) return 'amber';
   if (status.includes('Clearly') || status.includes('Approved') || status.includes('Evidence') || status.includes('OK')) return 'green';
-  if (status.includes('Not found')) return 'blue';
+  if (status.includes('Low') || status.includes('Not found')) return 'blue';
   return 'neutral';
 }
 
@@ -146,7 +147,8 @@ export default function Page() {
     subserviceFindings: currentReport?.allSubserviceFindings?.length || 0,
     reviewItems: currentReport?.humanReviewItems || 0,
     aiAnalyses: currentReport?.analyses.filter((analysis) => analysis.aiEnhanced).length || 0,
-    advantages: currentReport?.potentialAndwellAdvantages || 0
+    advantages: currentReport?.potentialAndwellAdvantages || 0,
+    expertScore: currentReport?.expertBrief?.expertScore || 0
   }), [competitors, reports, currentReport]);
 
   const topThreat = useMemo(() => {
@@ -214,8 +216,8 @@ export default function Page() {
       const report = await api<IntelligenceReport>('/api/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ competitors, maxPagesPerSite: 8, save: true, useAI: true }) });
       setPhase('Build brief');
       setCurrentReport(report);
-      setNotice(report.aiEnabled ? 'AI enhanced analysis completed and saved on the server.' : 'Analysis completed and saved on the server. OpenAI extraction was not enabled or did not return data.');
-      setView('dashboard');
+      setNotice(report.expertBrief ? 'Foremost expert analysis completed and saved on the server.' : 'Analysis completed. Run a fresh scan after deployment to generate the full expert brief.');
+      setView(report.expertBrief ? 'expert' : 'dashboard');
     } catch (err) { setError(err instanceof Error ? err.message : 'Analysis failed.'); } finally { setBusy(false); setPhase('Ready'); }
   }
 
@@ -225,7 +227,7 @@ export default function Page() {
       const response = await api<{ report: IntelligenceReport }>(`/api/reports?id=${encodeURIComponent(id)}`);
       setCurrentReport(response.report);
       setNotice('Stored report loaded.');
-      setView('dashboard');
+      setView(response.report.expertBrief ? 'expert' : 'dashboard');
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load report.'); } finally { setBusy(false); setPhase('Ready'); }
   }
 
@@ -239,7 +241,7 @@ export default function Page() {
 
   async function runDiagnostics() {
     setBusy(true); setPhase('System Check'); setError(''); setDiagnostics([]);
-    const routes = ['/api/version', '/api/health', '/api/diagnostics', '/api/analyze', '/api/competitors', '/api/reports', '/api/reviews', '/api/catalog', '/api/ask', '/api/runtime'];
+    const routes = ['/api/version', '/api/health', '/api/diagnostics', '/api/analyze', '/api/expert', '/api/competitors', '/api/reports', '/api/reviews', '/api/catalog', '/api/ask', '/api/runtime'];
     const results: ApiCheck[] = [];
     for (const route of routes) {
       try {
@@ -266,19 +268,20 @@ export default function Page() {
       <div className="roleBox">
         <label>Lens</label>
         <select className="select darkSelect" value={roleView} onChange={(event) => setRoleView(event.target.value as RoleView)}>
-          {Object.keys(roleGuidance).map((role) => <option key={role} value={role}>{role}</option>)}
+          {(Object.keys(roleGuidance) as RoleView[]).map((role) => <option key={role} value={role}>{role}</option>)}
         </select>
         <p>{roleGuidance[roleView].headline}</p>
       </div>
       <nav className="nav proNav">{nav.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => setView(item.key)}><strong>{item.label}</strong><small>{item.note}</small></button>)}</nav>
     </aside>
     <main className="main proMain">
-      <header className="head proHead"><div><small>{currentReport?.aiEnabled ? `AI Enhanced | ${currentReport.aiModel || 'OpenAI'}` : 'Stable Build'}</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><Badge tone={busy ? 'amber' : 'green'}>{phase}</Badge><button className="btn" disabled={busy} onClick={refreshServerState}>Load Server Data</button><button className="btn" onClick={() => setView('diagnostics')}>System Check</button></div></header>
+      <header className="head proHead"><div><small>{currentReport?.expertBrief ? `Foremost Expert | ${currentReport.expertBrief.expertScore}` : currentReport?.aiEnabled ? `AI Enhanced | ${currentReport.aiModel || 'OpenAI'}` : 'Stable Build'}</small><h2>{nav.find((item) => item.key === view)?.label || 'Competitive Intelligence Hub'}</h2></div><div className="row"><Badge tone={busy ? 'amber' : 'green'}>{phase}</Badge><button className="btn" disabled={busy} onClick={refreshServerState}>Load Server Data</button><button className="btn" onClick={() => setView('diagnostics')}>System Check</button></div></header>
       <div className="content proContent">
         {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
         {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
         {busy && <ProgressSteps busy={busy} phase={phase} />}
         {view === 'dashboard' && <Dashboard stats={stats} currentReport={currentReport} roleView={roleView} topThreat={topThreat} topOpportunity={topOpportunity} setView={setView} exportJson={exportJson} clearLegacyBrowserStorage={clearLegacyBrowserStorage} />}
+        {view === 'expert' && <ExpertCenter currentReport={currentReport} setView={setView} />}
         {view === 'ai' && <AIIntelligence currentReport={currentReport} aiAnalyses={aiAnalyses} />}
         {view === 'prompt' && <PromptEngine />}
         {view === 'intake' && <Intake competitors={competitors} setCompetitors={setCompetitors} urlInput={urlInput} setUrlInput={setUrlInput} addUrls={addUrls} saveCompetitors={saveCompetitors} runAnalysis={runAnalysis} busy={busy} />}
@@ -295,45 +298,35 @@ export default function Page() {
 
 function Dashboard({ stats, currentReport, roleView, topThreat, topOpportunity, setView, exportJson, clearLegacyBrowserStorage }: { stats: Record<string, number>; currentReport: IntelligenceReport | null; roleView: RoleView; topThreat?: NonNullable<IntelligenceReport['competitorScores']>[number]; topOpportunity?: NonNullable<IntelligenceReport['competitorScores']>[number]; setView: (view: View) => void; exportJson: () => void; clearLegacyBrowserStorage: () => void }) {
   return <>
-    <section className="hero proHero"><Badge tone="dark">{roleGuidance[roleView].headline}</Badge><h1>Know the market, coach the field, and keep the language safe before anyone starts freelancing with confidence.</h1><p>{roleGuidance[roleView].focus}</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run Competitive Scan</button><button className="btn" onClick={() => setView('ask')}>Ask the Hub</button><button className="btn" onClick={() => setView('battlecards')}>Open Battlecards</button><button className="btn" onClick={clearLegacyBrowserStorage}>Clear browser cache keys</button></div></section>
-    <div className="grid cols4"><Stat label="Competitors" value={stats.competitors} hint="Loaded or entered" /><Stat label="AI enhanced" value={stats.aiAnalyses} hint="OpenAI extraction" /><Stat label="Review items" value={stats.reviewItems} hint="Needs approval" /><Stat label="Advantages" value={stats.advantages} hint="Potential Andwell plays" /></div>
-    {currentReport ? <div className="grid cols2 commandGrid"><Panel title="Executive Command Brief" className="featurePanel"><p>{currentReport.executiveSummary}</p>{currentReport.aiLeadershipSummary ? <div className="notice"><strong>AI leadership summary</strong><br />{currentReport.aiLeadershipSummary}</div> : null}<div className="briefList">{currentReport.executiveInsights?.map((insight) => <div key={insight.title} className="briefItem"><Badge tone={toneForStatus(insight.priority)}>{insight.priority}</Badge><strong>{insight.title}</strong><p>{insight.summary}</p><span>{insight.action}</span></div>)}</div><div className="row"><Badge tone={currentReport.aiEnabled ? 'green' : 'amber'}>{currentReport.aiEnabled ? 'AI enabled' : 'Rule based only'}</Badge><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel><Panel title="Top strategic signals"><div className="signalStack"><div><small>Highest threat</small><h2>{topThreat?.competitorName || 'No report loaded'}</h2><p>{topThreat?.executiveReadout || 'Run or load a report to see threat level, overlap, depth, and coaching priority.'}</p>{topThreat ? <Badge tone={toneForStatus(topThreat.threatLevel)}>{topThreat.threatLevel}</Badge> : null}</div><div><small>Best Andwell opportunity</small><h2>{topOpportunity?.competitorName || 'No report loaded'}</h2><p>{topOpportunity ? `Lead with ${topOpportunity.leadWith.slice(0, 4).join(', ')}. Differentiation score: ${topOpportunity.andwellDifferentiationScore}%.` : 'Opportunities appear after a scan is loaded.'}</p></div><div className="row"><button className="btn primary" onClick={() => setView('matrix')}>Review evidence</button><button className="btn" onClick={() => setView('battlecards')}>Coach reps</button></div></div></Panel></div> : <Panel title="No report loaded yet"><p>The app is ready. Add competitor URLs, then run a scan. If OPENAI_API_KEY is configured in Hostinger, AI extraction will run server side.</p></Panel>}
-    {currentReport?.competitorScores?.length ? <Panel title="Competitor Intelligence Scoreboard"><div className="grid cols2">{currentReport.competitorScores.map((score) => <div className="scoreCard proScore" key={score.competitorId}><div className="row spread"><h3>{score.competitorName}</h3><Badge tone={toneForStatus(score.threatLevel)}>{score.threatLevel}</Badge></div><p>{score.executiveReadout}</p><div className="scoreGrid"><Stat label="Overlap" value={`${score.serviceLineMatchScore}%`} /><Stat label="Depth" value={`${score.subserviceDepthScore}%`} /><Stat label="Advantage" value={`${score.andwellDifferentiationScore}%`} /><Stat label="Review risk" value={`${score.reviewRiskScore}%`} /></div></div>)}</div></Panel> : null}
+    <section className="hero proHero"><Badge tone="dark">{roleGuidance[roleView].headline}</Badge><h1>Know the market, coach the field, and keep the language safe before anyone starts freelancing with confidence.</h1><p>{roleGuidance[roleView].focus}</p><div className="row"><button className="btn primary" onClick={() => setView('intake')}>Run Competitive Scan</button><button className="btn" onClick={() => setView('expert')}>Open Foremost Expert</button><button className="btn" onClick={() => setView('ask')}>Ask the Hub</button><button className="btn" onClick={clearLegacyBrowserStorage}>Clear browser cache keys</button></div></section>
+    <div className="grid cols4"><Stat label="Expert score" value={stats.expertScore} hint="Foremost expert layer" /><Stat label="AI enhanced" value={stats.aiAnalyses} hint="OpenAI extraction" /><Stat label="Review items" value={stats.reviewItems} hint="Needs approval" /><Stat label="Advantages" value={stats.advantages} hint="Potential Andwell plays" /></div>
+    {currentReport ? <div className="grid cols2 commandGrid"><Panel title="Executive Command Brief" className="featurePanel"><p>{currentReport.expertBrief?.expertSummary || currentReport.executiveSummary}</p>{currentReport.expertBrief ? <div className="notice"><strong>Leadership decision</strong><br />{currentReport.expertBrief.leadershipDecision}</div> : null}<div className="briefList">{currentReport.executiveInsights?.map((insight) => <div key={insight.title} className="briefItem"><Badge tone={toneForStatus(insight.priority)}>{insight.priority}</Badge><strong>{insight.title}</strong><p>{insight.summary}</p><span>{insight.action}</span></div>)}</div><div className="row"><Badge tone={currentReport.expertBrief ? 'green' : 'amber'}>{currentReport.expertBrief ? 'Expert brief ready' : 'Fresh scan needed for expert brief'}</Badge><Badge>{currentReport.pagesReviewed} pages reviewed</Badge><Badge>{stats.serviceFindings} service findings</Badge><Badge>{stats.subserviceFindings} subservice findings</Badge><button className="btn" onClick={exportJson}>Export JSON</button></div></Panel><Panel title="Top strategic signals"><div className="signalStack"><div><small>Highest threat</small><h2>{topThreat?.competitorName || 'No report loaded'}</h2><p>{topThreat?.executiveReadout || 'Run or load a report to see threat level, overlap, depth, and coaching priority.'}</p>{topThreat ? <Badge tone={toneForStatus(topThreat.threatLevel)}>{topThreat.threatLevel}</Badge> : null}</div><div><small>Best Andwell opportunity</small><h2>{topOpportunity?.competitorName || 'No report loaded'}</h2><p>{topOpportunity ? `Lead with ${topOpportunity.leadWith.slice(0, 4).join(', ')}. Differentiation score: ${topOpportunity.andwellDifferentiationScore}%.` : 'Opportunities appear after a scan is loaded.'}</p></div><div className="row"><button className="btn primary" onClick={() => setView('expert')}>View expert decisions</button><button className="btn" onClick={() => setView('battlecards')}>Coach reps</button></div></div></Panel></div> : <Panel title="No report loaded yet"><p>The app is ready. Add competitor URLs, then run a scan. If OPENAI_API_KEY is configured in Hostinger, AI extraction will run server side.</p></Panel>}
+  </>;
+}
+
+function ExpertCenter({ currentReport, setView }: { currentReport: IntelligenceReport | null; setView: (view: View) => void }) {
+  const expert = currentReport?.expertBrief;
+  if (!currentReport) return <Panel title="No report loaded"><p>Run or load a report to generate the foremost expert brief.</p><button className="btn primary" onClick={() => setView('intake')}>Run Competitive Scan</button></Panel>;
+  if (!expert) return <Panel title="Fresh scan needed"><p>This report was created before the foremost expert engine was added. Run a fresh scan to generate expert recommendations, field plays, and watchlist items.</p><button className="btn primary" onClick={() => setView('intake')}>Run Fresh Scan</button></Panel>;
+  return <>
+    <section className="hero answerHero"><div className="row spread"><Badge tone="dark">{expert.expertVersion}</Badge><Badge tone={expert.expertScore >= 80 ? 'green' : expert.expertScore >= 60 ? 'amber' : 'blue'}>Expert score {expert.expertScore}</Badge></div><h1>{expert.marketPosture}</h1><p>{expert.expertSummary}</p><div className="row"><button className="btn" onClick={() => setView('battlecards')}>Open Battlecards</button><button className="btn" onClick={() => setView('matrix')}>Review Evidence</button><button className="btn" onClick={() => setView('ask')}>Ask Follow Up</button></div></section>
+    <div className="grid cols3"><Panel title="Leadership decision"><p>{expert.leadershipDecision}</p></Panel><Panel title="Sales coaching priority"><p>{expert.salesCoachingPriority}</p></Panel><Panel title="Fastest field move"><p>{expert.fastestFieldMove}</p></Panel></div>
+    <Panel title="Governance warning" className="featurePanel"><p>{expert.governanceWarning}</p></Panel>
+    <Panel title="Expert recommendations"><div className="grid cols2">{expert.recommendations.map((item) => <div className="briefItem" key={item.id}><div className="row spread"><Badge tone={toneForStatus(item.priority)}>{item.priority}</Badge><Badge>{item.audience}</Badge></div><strong>{item.title}</strong><p>{item.reasoning}</p><div className="success"><strong>Action</strong><br />{item.action}</div><div className="notice"><strong>Safe language</strong><br />{item.safeLanguage}</div>{item.reviewRequired ? <Badge tone="amber">Review required</Badge> : <Badge tone="green">Ready for coaching</Badge>}</div>)}</div></Panel>
+    <Panel title="Field plays"><div className="grid cols2">{expert.fieldPlays.map((play) => <div className="battleCard upgradedBattle" key={play.id}><div className="row spread"><h3>{play.competitorName}</h3><Badge>{play.serviceLine}</Badge></div><p>{play.scenario}</p><div className="battleSection"><strong>Lead with</strong><span>{play.leadWith}</span></div><div className="battleSection"><strong>Referral question</strong><span>{play.referralQuestion}</span></div><div className="battleSection"><strong>Objection response</strong><span>{play.objectionResponse}</span></div><div className="notice"><strong>Proof needed</strong><br />{play.proofNeeded}</div><div className="error"><strong>Avoid saying</strong><br />{play.avoidSaying}</div></div>)}</div></Panel>
+    <div className="grid cols2"><Panel title="Strongest threats"><TagList items={expert.strongestThreats} /></Panel><Panel title="Best opportunities"><TagList items={expert.bestOpportunities} /></Panel></div>
+    <Panel title="Watchlist"><div className="grid cols2">{expert.watchlist.map((item) => <div className="evidenceCard" key={item.id}><div className="row spread"><h3>{item.competitorName}</h3><Badge tone={toneForStatus(item.priority)}>{item.priority}</Badge></div><p><strong>Signal:</strong> {item.signal}</p><p>{item.whyItMatters}</p><div className="notice"><strong>Next check</strong><br />{item.nextCheck}</div></div>)}</div></Panel>
   </>;
 }
 
 function AIIntelligence({ currentReport, aiAnalyses }: { currentReport: IntelligenceReport | null; aiAnalyses: AnyAnalysis[] }) {
   if (!currentReport) return <Panel title="No report loaded"><p>Run or load a report to see AI extraction output.</p></Panel>;
   if (!currentReport.aiEnabled || !aiAnalyses.length) return <Panel title="AI extraction not available"><p>This report does not include AI extraction output. Confirm OPENAI_API_KEY is set in Hostinger, redeploy, then run analysis again.</p></Panel>;
-  return <>
-    <section className="section"><div><h1>Extracted Intelligence</h1><p>Structured extraction from crawled public pages, including services, benefits, claims, programs, proof points, calls to action, advantages, review risk, and battlecards.</p></div><Badge tone="green">{currentReport.aiModel || 'OpenAI'} enabled</Badge></section>
-    {currentReport.aiLeadershipSummary ? <section className="hero answerHero"><h2>Leadership Summary</h2><p>{currentReport.aiLeadershipSummary}</p></section> : null}
-    <div className="grid">{aiAnalyses.map((analysis) => {
-      const ai = analysis.aiExtraction;
-      if (!ai) return null;
-      return <div className="card aiCard" key={analysis.id}>
-        <div className="row spread"><div><h3>{analysis.name}</h3><p className="muted">{analysis.url}</p></div><Badge tone={toneForStatus(ai.rawConfidence)}>AI confidence: {ai.rawConfidence}</Badge></div>
-        <div className="grid cols3" style={{ marginTop: 18 }}>
-          <Panel title="Services mentioned"><TagList items={ai.servicesMentioned} /></Panel>
-          <Panel title="Proof points"><TagList items={ai.proofPoints} /></Panel>
-          <Panel title="Referral calls to action"><TagList items={ai.referralCallsToAction} /></Panel>
-          <Panel title="Competitor advantages"><TagList items={ai.competitorAdvantages} /></Panel>
-          <Panel title="Andwell advantages"><TagList items={ai.andwellAdvantages} /></Panel>
-          <Panel title="Review risks"><TagList items={ai.reviewRisks} /></Panel>
-        </div>
-        <Panel title="AI service line depth"><div className="grid cols2">{(ai.serviceLineDepth || []).map((item) => <div className="scoreCard" key={`${analysis.id}${item.serviceLine}`}><div className="row spread"><h3>{item.serviceLine}</h3><Badge tone={toneForStatus(item.reviewRisk)}>{item.reviewRisk} review risk</Badge></div><p>{item.summary}</p><div className="scoreGrid"><Stat label="Depth" value={`${item.depthScore}%`} /><Stat label="Evidence" value={item.evidenceStrength} /></div></div>)}</div></Panel>
-        <Panel title="AI sales battlecards"><div className="grid cols2">{(ai.salesBattlecards || []).map((card) => <div className="battleCard" key={`${analysis.id}${card.serviceLine}`}><h3>{card.serviceLine}</h3><p><strong>Lead with:</strong> {card.leadWith}</p><p><strong>Referral question:</strong> {card.referralQuestion}</p><p><strong>Objection response:</strong> {card.objectionResponse}</p><div className="notice"><strong>Safe language</strong><br />{card.safeSalesLanguage}</div><div className="error"><strong>Do not say</strong><br />{card.doNotSayLanguage}</div></div>)}</div></Panel>
-      </div>;
-    })}</div>
-  </>;
+  return <><section className="section"><div><h1>Extracted Intelligence</h1><p>Structured extraction from crawled public pages, including services, proof points, calls to action, advantages, review risk, and battlecards.</p></div><Badge tone="green">{currentReport.aiModel || 'OpenAI'} enabled</Badge></section>{currentReport.aiLeadershipSummary ? <section className="hero answerHero"><h2>Leadership Summary</h2><p>{currentReport.aiLeadershipSummary}</p></section> : null}<div className="grid">{aiAnalyses.map((analysis) => <Panel title={analysis.name} key={analysis.id}><div className="grid cols3"><Panel title="Services mentioned"><TagList items={analysis.aiExtraction?.servicesMentioned} /></Panel><Panel title="Proof points"><TagList items={analysis.aiExtraction?.proofPoints} /></Panel><Panel title="Review risks"><TagList items={analysis.aiExtraction?.reviewRisks} /></Panel></div></Panel>)}</div></>;
 }
 
 function PromptEngine() {
-  return <>
-    <section className="section"><div><h1>Methodology</h1><p>The governed instruction layer for healthcare competitive intelligence, service extraction, sales positioning, and review governance.</p></div><Badge tone="blue">Governed intelligence</Badge></section>
-    <Panel title="Master Intelligence Instruction" className="featurePanel"><p>{fullCompetitiveIntelligenceInstruction}</p></Panel>
-    <div className="grid cols2">{expertPromptModules.map((module) => <div className="promptCard" key={module.id}><Badge tone="dark">{module.id}</Badge><h3>{module.title}</h3><p>{module.purpose}</p><div className="promptBlock"><strong>Instructions</strong>{module.instructions.map((item) => <span key={item}>{item}</span>)}</div><div className="promptBlock output"><strong>Required output</strong>{module.requiredOutput.map((item) => <span key={item}>{item}</span>)}</div></div>)}</div>
-  </>;
+  return <><section className="section"><div><h1>Methodology</h1><p>The governed instruction layer for healthcare competitive intelligence, service extraction, sales positioning, and review governance.</p></div><Badge tone="blue">Governed intelligence</Badge></section><Panel title="Master Intelligence Instruction" className="featurePanel"><p>{fullCompetitiveIntelligenceInstruction}</p></Panel><div className="grid cols2">{expertPromptModules.map((module) => <div className="promptCard" key={module.id}><Badge tone="dark">{module.id}</Badge><h3>{module.title}</h3><p>{module.purpose}</p><div className="promptBlock"><strong>Instructions</strong>{module.instructions.map((item) => <span key={item}>{item}</span>)}</div><div className="promptBlock output"><strong>Required output</strong>{module.requiredOutput.map((item) => <span key={item}>{item}</span>)}</div></div>)}</div></>;
 }
 
 function Intake({ competitors, setCompetitors, urlInput, setUrlInput, addUrls, saveCompetitors, runAnalysis, busy }: { competitors: CompetitorInput[]; setCompetitors: (items: CompetitorInput[]) => void; urlInput: string; setUrlInput: (value: string) => void; addUrls: () => void; saveCompetitors: () => void; runAnalysis: () => void; busy: boolean }) {
@@ -356,7 +349,7 @@ function Matrix({ currentReport, matrixFilter, setMatrixFilter, matrixSearch, se
 }
 
 function Battlecards({ currentReport }: { currentReport: IntelligenceReport | null }) {
-  return <><section className="section"><div><h1>Battlecards</h1><p>Field usable positioning by competitor, including safe language, coaching priorities, and review warnings.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to generate battlecards.</p></Panel> : <div className="grid cols2">{currentReport.analyses.map((analysis) => <div className="battleCard upgradedBattle" key={analysis.id}><div className="row spread"><h3>{analysis.name}</h3><Badge tone={analysis.aiEnhanced ? 'green' : toneForStatus(analysis.score.threatLevel)}>{analysis.aiEnhanced ? 'AI enhanced' : analysis.score.threatLevel}</Badge></div><p>{analysis.aiExtraction?.leadershipSummary || analysis.score.executiveReadout}</p><div className="battleSection"><strong>Lead with</strong>{(analysis.aiExtraction?.salesBattlecards?.slice(0, 4).map((item) => item.leadWith) || analysis.score.leadWith).map((item) => <span key={item}>{item}</span>)}</div><div className="battleSection"><strong>Referral questions</strong>{analysis.aiExtraction?.salesBattlecards?.slice(0, 3).map((item) => <span key={item.referralQuestion}>{item.referralQuestion}</span>) || <span>Ask what specific patient need the referral source is trying to solve.</span>}</div><div className="battleSection"><strong>Needs review</strong>{analysis.score.needsReview.length ? analysis.score.needsReview.map((item) => <span key={item}>{item}</span>) : <span>No major review flags</span>}</div><div className="notice"><strong>Field rule</strong><br />Do not say they do not offer a service. Use not found publicly unless approved evidence confirms otherwise.</div></div>)}</div>}</>;
+  return <><section className="section"><div><h1>Battlecards</h1><p>Field usable positioning by competitor, including safe language, coaching priorities, and review warnings.</p></div></section>{!currentReport ? <Panel title="No report loaded"><p>Run or load a report to generate battlecards.</p></Panel> : <div className="grid cols2">{currentReport.analyses.map((analysis) => <div className="battleCard upgradedBattle" key={analysis.id}><div className="row spread"><h3>{analysis.name}</h3><Badge tone={analysis.aiEnhanced ? 'green' : toneForStatus(analysis.score.threatLevel)}>{analysis.aiEnhanced ? 'AI enhanced' : analysis.score.threatLevel}</Badge></div><p>{analysis.aiExtraction?.leadershipSummary || analysis.score.executiveReadout}</p><div className="battleSection"><strong>Lead with</strong>{(analysis.aiExtraction?.salesBattlecards?.slice(0, 4).map((item) => item.leadWith) || analysis.score.leadWith).map((item) => <span key={item}>{item}</span>)}</div><div className="battleSection"><strong>Needs review</strong>{analysis.score.needsReview.length ? analysis.score.needsReview.map((item) => <span key={item}>{item}</span>) : <span>No major review flags</span>}</div><div className="notice"><strong>Field rule</strong><br />Do not say they do not offer a service. Use not found publicly unless approved evidence confirms otherwise.</div></div>)}</div>}</>;
 }
 
 function Reports({ reports, currentReport, loadReport, exportJson, refreshServerState, busy }: { reports: ReportSummary[]; currentReport: IntelligenceReport | null; loadReport: (id: string) => void; exportJson: () => void; refreshServerState: () => void; busy: boolean }) {
