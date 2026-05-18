@@ -105,11 +105,17 @@ function applyAIEnhancement(analysis: CompetitorAnalysis, aiExtraction: NonNulla
 }
 
 function analyzeConcurrency(shouldUseAI: boolean) {
-  const fallback = shouldUseAI ? 3 : 5;
+  const fallback = shouldUseAI ? 5 : 8;
   const requested = Number(process.env.ANALYZE_CONCURRENCY || fallback);
   const ceiling = shouldUseAI ? 5 : 8;
   if (!Number.isFinite(requested)) return fallback;
   return Math.max(1, Math.min(ceiling, Math.floor(requested)));
+}
+
+function crawlMaxPagesLimit() {
+  const requested = Number(process.env.CRAWL_MAX_PAGES_PER_SITE || 8);
+  if (!Number.isFinite(requested)) return 8;
+  return Math.max(4, Math.min(35, Math.floor(requested)));
 }
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
@@ -135,9 +141,10 @@ export async function GET() {
     route: '/api/analyze',
     aiConfigured,
     analyzeConcurrency: analyzeConcurrency(aiConfigured),
+    crawlMaxPagesPerSiteLimit: crawlMaxPagesLimit(),
     urlValidation: 'enabled at request boundary and crawler boundary',
     message: aiConfigured
-      ? 'Analyze API route is active with OpenAI extraction enabled and controlled parallel processing.'
+      ? 'Analyze API route is active with OpenAI extraction enabled and maximum speed parallel processing.'
       : 'Analyze API route is active. OpenAI extraction is not enabled because OPENAI_API_KEY is missing.',
     checkedAt: new Date().toISOString()
   });
@@ -157,7 +164,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const maxPages = Math.min(Math.max(body.maxPagesPerSite || Number(process.env.CRAWL_MAX_PAGES_PER_SITE || 24), 4), 35);
+    const maxPagesLimit = crawlMaxPagesLimit();
+    const requestedMaxPages = Number(body.maxPagesPerSite || maxPagesLimit);
+    const maxPages = Math.min(Math.max(Number.isFinite(requestedMaxPages) ? requestedMaxPages : maxPagesLimit, 4), maxPagesLimit);
     const shouldUseAI = body.useAI !== false && isAIExtractionConfigured();
     const concurrency = analyzeConcurrency(shouldUseAI);
 
@@ -199,8 +208,9 @@ export async function POST(req: NextRequest) {
     const enhancedReport = {
       ...report,
       aiEnabled: shouldUseAI,
-      aiModel: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+      aiModel: process.env.OPENAI_MODEL || 'gpt-4.1-nano',
       analysisConcurrency: concurrency,
+      crawlMaxPagesPerSite: maxPages,
       aiLeadershipSummary: aiSummaries.length ? aiSummaries.join('\n\n') : undefined,
       executiveSummary: aiSummaries.length
         ? `${report.executiveSummary}\n\nAI leadership summary: ${aiSummaries.join(' ')}`
