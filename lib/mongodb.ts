@@ -1,7 +1,11 @@
 import { MongoClient, Db } from 'mongodb';
 
-const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB || 'competitive_intelligence_hub';
+function cleanEnvValue(value?: string) {
+  return value?.trim().replace(/^['"]|['"]$/g, '');
+}
+
+const uri = cleanEnvValue(process.env.MONGODB_URI);
+const dbName = cleanEnvValue(process.env.MONGODB_DB) || 'competitive_intelligence_hub';
 
 type GlobalMongo = typeof globalThis & {
   _cihMongoClientPromise?: Promise<MongoClient>;
@@ -20,8 +24,8 @@ export async function getMongoClient() {
 
   if (!globalMongo._cihMongoClientPromise) {
     const client = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 8000,
-      connectTimeoutMS: 10000,
+      serverSelectionTimeoutMS: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 1500),
+      connectTimeoutMS: Number(process.env.MONGODB_CONNECT_TIMEOUT_MS || 2000),
       maxPoolSize: 10
     });
     globalMongo._cihMongoClientPromise = client.connect();

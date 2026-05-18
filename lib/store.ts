@@ -33,8 +33,14 @@ export type HubStore = {
   catalogOverrides: CatalogOverride[];
 };
 
-const dataDir = process.env.CIH_DATA_DIR || path.join(process.cwd(), '.data');
-const storeFile = process.env.CIH_STORE_FILE || path.join(dataDir, 'competitive-intelligence-hub.json');
+function cleanEnvValue(value?: string) {
+  return value?.trim().replace(/^['"]|['"]$/g, '');
+}
+
+const dataDir = cleanEnvValue(process.env.CIH_DATA_DIR) || path.join(process.cwd(), '.data');
+const storeFile = cleanEnvValue(process.env.CIH_STORE_FILE) || path.join(dataDir, 'competitive-intelligence-hub.json');
+let mongoUnavailable = false;
+let supabaseUnavailable = false;
 
 const emptyStore = (): HubStore => ({
   version: 3,
@@ -132,18 +138,20 @@ function logPersistenceFallback(provider: string, error: unknown) {
 }
 
 export async function readStore(): Promise<HubStore> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       return await supabaseReadStore();
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       return await mongoReadStore();
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }
@@ -152,7 +160,7 @@ export async function readStore(): Promise<HubStore> {
 }
 
 export async function writeStore(store: HubStore) {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const supabase = getSupabaseClient();
       const [competitorsDelete, reportsDelete, reviewsDelete, catalogDelete] = await Promise.all([
@@ -181,12 +189,13 @@ export async function writeStore(store: HubStore) {
 
       return { ...store, updatedAt: new Date().toISOString() };
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
       return jsonWriteStore(store);
     }
   }
 
-  if (!isMongoConfigured()) return jsonWriteStore(store);
+  if (!isMongoConfigured() || mongoUnavailable) return jsonWriteStore(store);
 
   try {
     const [competitorsCol, reportsCol, reviewsCol, catalogCol] = await Promise.all([
@@ -212,6 +221,7 @@ export async function writeStore(store: HubStore) {
 
     return { ...store, updatedAt: new Date().toISOString() };
   } catch (error) {
+    mongoUnavailable = true;
     logPersistenceFallback('MongoDB', error);
     return jsonWriteStore(store);
   }
@@ -253,7 +263,7 @@ function catalogOverrideRow(override: CatalogOverride) {
 }
 
 export async function saveCompetitors(competitors: CompetitorInput[]) {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const supabase = getSupabaseClient();
       const normalized = competitors.filter((competitor) => competitor.url);
@@ -263,17 +273,19 @@ export async function saveCompetitors(competitors: CompetitorInput[]) {
       }
       return readStore();
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       const col = await collection<CompetitorInput>('competitors');
       const normalized = competitors.filter((competitor) => competitor.url);
       await Promise.all(normalized.map((competitor) => col.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
       return readStore();
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }
@@ -288,7 +300,7 @@ export async function saveCompetitors(competitors: CompetitorInput[]) {
 }
 
 export async function saveReport(report: IntelligenceReport) {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const supabase = getSupabaseClient();
       const reportResult = await supabase.from('cih_reports').upsert(reportRow(report), { onConflict: 'id' });
@@ -300,11 +312,12 @@ export async function saveReport(report: IntelligenceReport) {
       }
       return readStore();
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       const reportsCol = await collection<IntelligenceReport>('reports');
       const competitorsCol = await collection<CompetitorInput>('competitors');
@@ -313,6 +326,7 @@ export async function saveReport(report: IntelligenceReport) {
       await Promise.all(reportCompetitors.map((competitor) => competitorsCol.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
       return readStore();
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }
@@ -330,7 +344,7 @@ export async function saveReport(report: IntelligenceReport) {
 }
 
 export async function getReport(reportId: string) {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const result = await getSupabaseClient()
         .from('cih_reports')
@@ -340,15 +354,17 @@ export async function getReport(reportId: string) {
       assertSupabase('get report', result.error);
       return result.data ? result.data.payload as IntelligenceReport : null;
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       const col = await collection<IntelligenceReport>('reports');
       return col.findOne({ id: reportId }, { projection: { _id: 0 } });
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }
@@ -361,22 +377,24 @@ export async function saveReview(input: Omit<StoredReview, 'id' | 'updatedAt'> &
   const id = input.id || `review_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const review: StoredReview = { ...input, id, updatedAt: new Date().toISOString() };
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const result = await getSupabaseClient().from('cih_reviews').upsert(reviewRow(review), { onConflict: 'finding_id' });
       assertSupabase('upsert review', result.error);
       return review;
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       const col = await collection<StoredReview>('reviews');
       await col.updateOne({ findingId: input.findingId }, { $set: review }, { upsert: true });
       return review;
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }
@@ -390,22 +408,24 @@ export async function saveReview(input: Omit<StoredReview, 'id' | 'updatedAt'> &
 export async function saveCatalogOverride(input: Omit<CatalogOverride, 'updatedAt'>) {
   const override: CatalogOverride = { ...input, updatedAt: new Date().toISOString() };
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !supabaseUnavailable) {
     try {
       const result = await getSupabaseClient().from('cih_catalog_overrides').upsert(catalogOverrideRow(override), { onConflict: 'service_line' });
       assertSupabase('upsert catalog override', result.error);
       return override;
     } catch (error) {
+      supabaseUnavailable = true;
       logPersistenceFallback('Supabase', error);
     }
   }
 
-  if (isMongoConfigured()) {
+  if (isMongoConfigured() && !mongoUnavailable) {
     try {
       const col = await collection<CatalogOverride>('catalogOverrides');
       await col.updateOne({ serviceLine: input.serviceLine }, { $set: override }, { upsert: true });
       return override;
     } catch (error) {
+      mongoUnavailable = true;
       logPersistenceFallback('MongoDB', error);
     }
   }

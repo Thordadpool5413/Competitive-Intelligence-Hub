@@ -1,7 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const url = process.env.SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+function cleanEnvValue(value?: string) {
+  return value?.trim().replace(/^['"]|['"]$/g, '');
+}
+
+const url = cleanEnvValue(process.env.SUPABASE_URL);
+const serviceKey = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY);
 
 type GlobalSupabase = typeof globalThis & {
   _cihSupabaseClient?: SupabaseClient;
