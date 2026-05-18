@@ -2,6 +2,8 @@ export type Status = 'Clearly offered' | 'Mentioned only' | 'Related but not equ
 export type Confidence = 'High' | 'Moderate' | 'Low' | 'Not found' | 'Needs review';
 export type ReviewStatus = 'Sales usable with evidence' | 'Manager review suggested' | 'Needs human review' | 'Approved for sales use' | 'Rejected';
 export type ThreatLevel = 'Low overlap' | 'Moderate overlap' | 'High overlap' | 'Strategic threat';
+export type ExpertPriority = 'Critical' | 'High' | 'Medium' | 'Low';
+export type ExpertAudience = 'CEO' | 'COO' | 'Sales Leader' | 'Sales Rep' | 'Admin' | 'Marketing' | 'Clinical Leader';
 
 export type CrawledPage = {
   url: string;
@@ -154,6 +156,55 @@ export type ExecutiveInsight = {
   action: string;
 };
 
+export type ExpertRecommendation = {
+  id: string;
+  priority: ExpertPriority;
+  audience: ExpertAudience;
+  title: string;
+  reasoning: string;
+  action: string;
+  safeLanguage: string;
+  reviewRequired: boolean;
+};
+
+export type ExpertFieldPlay = {
+  id: string;
+  competitorName: string;
+  serviceLine: string;
+  scenario: string;
+  leadWith: string;
+  referralQuestion: string;
+  objectionResponse: string;
+  proofNeeded: string;
+  avoidSaying: string;
+};
+
+export type ExpertWatchItem = {
+  id: string;
+  competitorName: string;
+  signal: string;
+  whyItMatters: string;
+  nextCheck: string;
+  priority: ExpertPriority;
+};
+
+export type ExpertBrief = {
+  expertVersion: string;
+  generatedAt: string;
+  expertScore: number;
+  marketPosture: string;
+  expertSummary: string;
+  leadershipDecision: string;
+  salesCoachingPriority: string;
+  fastestFieldMove: string;
+  governanceWarning: string;
+  strongestThreats: string[];
+  bestOpportunities: string[];
+  recommendations: ExpertRecommendation[];
+  fieldPlays: ExpertFieldPlay[];
+  watchlist: ExpertWatchItem[];
+};
+
 export type IntelligenceReport = {
   id: string;
   generatedAt: string;
@@ -175,4 +226,5 @@ export type IntelligenceReport = {
   aiEnabled?: boolean;
   aiModel?: string;
   aiLeadershipSummary?: string;
+  expertBrief?: ExpertBrief;
 };
