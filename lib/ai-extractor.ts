@@ -1,9 +1,19 @@
+import https from 'node:https';
 import { andwellCatalog } from './andwell';
 import type { AICompetitorExtraction, CompetitorInput, CrawledPage } from './types';
 
 const defaultModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const openAIBaseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '');
+const openAITimeoutMs = Number(process.env.OPENAI_TIMEOUT_MS || 60000);
 const maxPagesForPrompt = 10;
 const maxCharsPerPage = 2400;
+
+type OpenAIRequestBody = {
+  model: string;
+  input: string;
+  temperature: number;
+  max_output_tokens: number;
+};
 
 function providerName(input: CompetitorInput) {
   if (input.name?.trim()) return input.name.trim();
@@ -211,35 +221,126 @@ function extractJson(text: string) {
   throw new Error('OpenAI did not return parseable JSON.');
 }
 
+function compactError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error || 'Unknown error');
+}
+
+function isTlsTransportError(error: unknown) {
+  const message = compactError(error).toLowerCase();
+  return message.includes('ssl') || message.includes('tls') || message.includes('ssl3_read_bytes') || message.includes('alert internal error') || message.includes('econnreset') || message.includes('socket hang up');
+}
+
+async function callOpenAIWithFetch(apiKey: string, requestBody: OpenAIRequestBody) {
+  const response = await fetch(`${openAIBaseUrl}/v1/responses`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI HTTP error through fetch: ${response.status} ${errorText.slice(0, 500)}`);
+  }
+
+  return response.json();
+}
+
+function callOpenAIWithNativeHttps(apiKey: string, requestBody: OpenAIRequestBody): Promise<any> {
+  const endpoint = new URL(`${openAIBaseUrl}/v1/responses`);
+  const body = JSON.stringify(requestBody);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      protocol: endpoint.protocol,
+      hostname: endpoint.hostname,
+      port: endpoint.port || 443,
+      path: `${endpoint.pathname}${endpoint.search}`,
+      method: 'POST',
+      servername: endpoint.hostname,
+      minVersion: 'TLSv1.2',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+        accept: 'application/json'
+      },
+      timeout: openAITimeoutMs
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        const statusCode = res.statusCode || 0;
+        if (statusCode < 200 || statusCode >= 300) {
+          reject(new Error(`OpenAI HTTP error through native HTTPS: ${statusCode} ${text.slice(0, 500)}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(text));
+        } catch {
+          reject(new Error(`OpenAI native HTTPS returned non JSON response: ${text.slice(0, 500)}`));
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`OpenAI request timed out after ${openAITimeoutMs}ms.`));
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function callOpenAI(apiKey: string, requestBody: OpenAIRequestBody) {
+  try {
+    return await callOpenAIWithFetch(apiKey, requestBody);
+  } catch (fetchError) {
+    if (!isTlsTransportError(fetchError)) throw fetchError;
+    try {
+      return await callOpenAIWithNativeHttps(apiKey, requestBody);
+    } catch (nativeError) {
+      throw new Error(`OpenAI TLS connection failed through fetch and native HTTPS fallback. Fetch error: ${compactError(fetchError)}. Native HTTPS error: ${compactError(nativeError)}. This usually means the hosting environment cannot complete an outbound TLS handshake to api.openai.com, or a proxy/firewall is interrupting TLS.`);
+    }
+  }
+}
+
+function outputTextFromPayload(payload: any) {
+  return payload.output_text || payload.output?.flatMap((item: any) => item.content || []).map((content: any) => content.text || '').join('\n') || '';
+}
+
 export function isAIExtractionConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
+}
+
+export function getAITransportDiagnostics() {
+  return {
+    configured: isAIExtractionConfigured(),
+    model: defaultModel,
+    baseUrlHost: (() => {
+      try { return new URL(openAIBaseUrl).hostname; } catch { return 'invalid'; }
+    })(),
+    timeoutMs: openAITimeoutMs,
+    transport: 'fetch with native Node HTTPS TLS fallback'
+  };
 }
 
 export async function extractCompetitorIntelligence(input: CompetitorInput, pages: CrawledPage[]): Promise<AICompetitorExtraction | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: defaultModel,
-      input: promptFor(input, pages),
-      temperature: 0.2,
-      max_output_tokens: 5000
-    })
+  const payload = await callOpenAI(apiKey, {
+    model: defaultModel,
+    input: promptFor(input, pages),
+    temperature: 0.2,
+    max_output_tokens: 5000
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI extraction failed: ${response.status} ${errorText.slice(0, 300)}`);
-  }
-
-  const payload = await response.json();
-  const outputText = payload.output_text || payload.output?.flatMap((item: any) => item.content || []).map((content: any) => content.text || '').join('\n') || '';
+  const outputText = outputTextFromPayload(payload);
   const parsed = extractJson(outputText);
   return normalizeExtraction({ ...parsed, aiModel: defaultModel }, input);
 }
