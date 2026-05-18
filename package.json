@@ -8,6 +8,8 @@
     "dev": "next dev",
     "build": "node scripts/hostinger-build.js",
     "build:next": "next build",
+    "build:strict": "CIH_STRICT_BUILD=1 next build",
+    "typecheck": "tsc --noEmit",
     "start": "node server.js",
     "serve": "node server.js",
     "hostinger:start": "node server.js",
