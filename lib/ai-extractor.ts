@@ -5,8 +5,9 @@ import type { AICompetitorExtraction, CompetitorInput, CrawledPage } from './typ
 const defaultModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const openAIBaseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '');
 const openAITimeoutMs = Number(process.env.OPENAI_TIMEOUT_MS || 60000);
-const maxPagesForPrompt = 10;
-const maxCharsPerPage = 2400;
+const maxPagesForPrompt = Math.max(3, Math.min(10, Number(process.env.OPENAI_MAX_PROMPT_PAGES || 7)));
+const maxCharsPerPage = Math.max(900, Math.min(2400, Number(process.env.OPENAI_MAX_CHARS_PER_PAGE || 1600)));
+const maxOutputTokens = Math.max(1800, Math.min(5000, Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 3200)));
 
 type OpenAIRequestBody = {
   model: string;
@@ -136,7 +137,7 @@ function promptFor(input: CompetitorInput, pages: CrawledPage[]) {
 
   return `You are an expert healthcare competitive intelligence analyst for Andwell Health Partners.
 
-Analyze the competitor's public website evidence and return ONLY valid JSON. Do not include markdown. Do not make unsupported claims.
+Analyze the competitor's public website evidence and return ONLY valid compact JSON. Do not include markdown. Do not make unsupported claims. Keep every string concise.
 
 Safety and compliance rules:
 1. Use only the provided public website evidence.
@@ -325,6 +326,9 @@ export function getAITransportDiagnostics() {
       try { return new URL(openAIBaseUrl).hostname; } catch { return 'invalid'; }
     })(),
     timeoutMs: openAITimeoutMs,
+    maxPagesForPrompt,
+    maxCharsPerPage,
+    maxOutputTokens,
     transport: 'fetch with native Node HTTPS TLS fallback'
   };
 }
@@ -337,7 +341,7 @@ export async function extractCompetitorIntelligence(input: CompetitorInput, page
     model: defaultModel,
     input: promptFor(input, pages),
     temperature: 0.2,
-    max_output_tokens: 5000
+    max_output_tokens: maxOutputTokens
   });
 
   const outputText = outputTextFromPayload(payload);
