@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Andwell Health Partners competitive service line intelligence hub for Hostinger Node.js hosting.",
+  "main": "server.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "node server.js",
+    "serve": "node server.js",
     "hostinger:start": "node server.js",
+    "start:hostinger": "node server.js",
     "start:next": "next start -H 0.0.0.0 -p 3000"
   },
   "dependencies": {
@@ -28,6 +31,6 @@
     "postcss": "8.5.10"
   },
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=18.18.0"
   }
 }
