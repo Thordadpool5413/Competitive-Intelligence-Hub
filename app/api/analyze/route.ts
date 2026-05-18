@@ -8,8 +8,55 @@ import type { CompetitorAnalysis, CompetitorInput, CrawledPage } from '../../../
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function normalizeUrl(url: string) {
-  return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+function cleanHost(hostname: string) {
+  return hostname.toLowerCase().trim().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '');
+}
+
+function blockedIPv4(host: string) {
+  const parts = cleanHost(host).split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = parts;
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+function blockedIPv6(host: string) {
+  const value = cleanHost(host);
+  if (!value.includes(':')) return false;
+  if (value.includes('%')) return true;
+  if (value === '::' || value === '::1' || value === '0:0:0:0:0:0:0:1') return true;
+  if (/^fe[89ab]/i.test(value)) return true;
+  if (/^f[cd]/i.test(value)) return true;
+  const mapped = value.match(/(?:^|:)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i)?.[1];
+  return mapped ? blockedIPv4(mapped) : false;
+}
+
+function toSafePublicHttpUrl(rawUrl: string): string | null {
+  try {
+    const candidate = rawUrl.trim();
+    if (!candidate) return null;
+    const parsed = new URL(candidate.startsWith('http://') || candidate.startsWith('https://') ? candidate : `https://${candidate}`);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    if (parsed.username || parsed.password) return null;
+    const host = cleanHost(parsed.hostname);
+    if (!host || host === 'localhost') return null;
+    if (host.endsWith('.local') || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.lan') || host.endsWith('.home') || host.endsWith('.corp') || host.endsWith('.test')) return null;
+    if (blockedIPv4(host) || blockedIPv6(host)) return null;
+    parsed.hash = '';
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeCompetitorInput(item: CompetitorInput): CompetitorInput | null {
+  const safeUrl = toSafePublicHttpUrl(item.url || '');
+  if (!safeUrl) return null;
+  return {
+    ...item,
+    url: safeUrl
+  };
 }
 
 function applyAIEnhancement(analysis: CompetitorAnalysis, aiExtraction: NonNullable<CompetitorAnalysis['aiExtraction']>): CompetitorAnalysis {
@@ -56,6 +103,7 @@ export async function GET() {
     ok: true,
     route: '/api/analyze',
     aiConfigured: isAIExtractionConfigured(),
+    urlValidation: 'enabled at request boundary and crawler boundary',
     message: isAIExtractionConfigured()
       ? 'Analyze API route is active with OpenAI extraction enabled.'
       : 'Analyze API route is active. OpenAI extraction is not enabled because OPENAI_API_KEY is missing.',
@@ -66,13 +114,15 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as { competitors?: CompetitorInput[]; maxPagesPerSite?: number; save?: boolean; useAI?: boolean };
-    const competitors = (body.competitors || [])
-      .filter((item) => item.url?.trim())
-      .slice(0, 25)
-      .map((item) => ({ ...item, url: normalizeUrl(item.url.trim()) }));
+    const rawCompetitors = (body.competitors || []).filter((item) => item.url?.trim()).slice(0, 25);
+    const competitors = rawCompetitors
+      .map(sanitizeCompetitorInput)
+      .filter((item): item is CompetitorInput => Boolean(item));
 
     if (!competitors.length) {
-      return NextResponse.json({ error: 'Add at least one competitor URL.' }, { status: 400 });
+      return NextResponse.json({
+        error: 'Add at least one valid public competitor URL. Only public http or https URLs are allowed. Localhost, private IPs, link-local addresses, internal hostnames, and credentialed URLs are blocked.'
+      }, { status: 400 });
     }
 
     const maxPages = Math.min(Math.max(body.maxPagesPerSite || Number(process.env.CRAWL_MAX_PAGES_PER_SITE || 24), 4), 35);
