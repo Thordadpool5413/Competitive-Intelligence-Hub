@@ -2,12 +2,12 @@ import https from 'node:https';
 import { andwellCatalog } from './andwell';
 import type { AICompetitorExtraction, CompetitorInput, CrawledPage } from './types';
 
-const defaultModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const defaultModel = process.env.OPENAI_MODEL || 'gpt-4.1-nano';
 const openAIBaseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '');
 const openAITimeoutMs = Number(process.env.OPENAI_TIMEOUT_MS || 60000);
-const maxPagesForPrompt = Math.max(3, Math.min(10, Number(process.env.OPENAI_MAX_PROMPT_PAGES || 7)));
-const maxCharsPerPage = Math.max(900, Math.min(2400, Number(process.env.OPENAI_MAX_CHARS_PER_PAGE || 1600)));
-const maxOutputTokens = Math.max(1800, Math.min(5000, Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 3200)));
+const maxPagesForPrompt = Math.max(3, Math.min(10, Number(process.env.OPENAI_MAX_PROMPT_PAGES || 4)));
+const maxCharsPerPage = Math.max(900, Math.min(2400, Number(process.env.OPENAI_MAX_CHARS_PER_PAGE || 1000)));
+const maxOutputTokens = Math.max(1800, Math.min(5000, Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1800)));
 
 type OpenAIRequestBody = {
   model: string;
