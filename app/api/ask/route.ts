@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readStore } from '../../../lib/store';
-import { fieldActionFromEvidence, questionTerms, rankEvidenceForQuestion } from '../../../lib/smart-ranking';
+import { fieldActionFromEvidence, questionTerms, rankEvidenceForQuestion, type EvidenceLike } from '../../../lib/smart-ranking';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type HubEvidenceItem = EvidenceLike & {
+  type: 'service' | 'subservice';
+};
 
 function norm(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -32,17 +36,16 @@ export async function POST(req: NextRequest) {
   }
 
   const terms = questionTerms(question);
-  const allItems = [
-    ...latest.allFindings.map((finding) => ({ type: 'service', ...finding })),
-    ...latest.allSubserviceFindings.map((finding) => ({ type: 'subservice', ...finding }))
-  ];
+  const serviceItems: HubEvidenceItem[] = latest.allFindings.map((finding) => ({ type: 'service', ...finding }));
+  const subserviceItems: HubEvidenceItem[] = latest.allSubserviceFindings.map((finding) => ({ type: 'subservice', ...finding }));
+  const allItems: HubEvidenceItem[] = [...serviceItems, ...subserviceItems];
 
   const candidateItems = allItems
     .filter((item) => !body.competitorName || item.competitorName.toLowerCase().includes(body.competitorName.toLowerCase()))
     .filter((item) => !body.serviceLine || item.serviceLine.toLowerCase().includes(body.serviceLine.toLowerCase()))
     .filter((item) => {
       if (!terms.length) return true;
-      return includesAny(`${item.competitorName} ${item.serviceLine} ${'subservice' in item ? item.subservice : ''} ${item.safeSalesWording} ${item.evidenceExcerpt} ${item.sourceTitle || ''}`, terms);
+      return includesAny(`${item.competitorName} ${item.serviceLine} ${item.subservice || ''} ${item.safeSalesWording} ${item.evidenceExcerpt} ${item.sourceTitle || ''}`, terms);
     });
 
   const ranked = rankEvidenceForQuestion(candidateItems, question).slice(0, 12);
@@ -55,11 +58,11 @@ export async function POST(req: NextRequest) {
   const answerParts = [];
   answerParts.push(`Based on the latest stored report from ${new Date(latest.generatedAt).toLocaleString()}, I found ${ranked.length} relevant finding${ranked.length === 1 ? '' : 's'} and ranked them by question fit, evidence strength, confidence, source quality, and sales usability.`);
   if (topEvidence.length) {
-    answerParts.push(`Top evidence: ${topEvidence.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''} | ${item.competitorStatus}`).join('; ')}.`);
+    answerParts.push(`Top evidence: ${topEvidence.map((item) => `${item.competitorName} | ${item.serviceLine}${item.subservice ? ` | ${item.subservice}` : ''} | ${item.competitorStatus}`).join('; ')}.`);
   }
-  if (potentialAdvantages.length) answerParts.push(`Potential Andwell advantages: ${potentialAdvantages.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
-  if (matches.length) answerParts.push(`Public matches found: ${matches.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
-  if (reviewItems.length) answerParts.push(`Review needed before sales use: ${reviewItems.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (potentialAdvantages.length) answerParts.push(`Potential Andwell advantages: ${potentialAdvantages.map((item) => `${item.competitorName} | ${item.serviceLine}${item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (matches.length) answerParts.push(`Public matches found: ${matches.map((item) => `${item.competitorName} | ${item.serviceLine}${item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (reviewItems.length) answerParts.push(`Review needed before sales use: ${reviewItems.map((item) => `${item.competitorName} | ${item.serviceLine}${item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
   if (nextBestActions.length) answerParts.push(`Recommended next move: ${nextBestActions[0]}`);
   answerParts.push('Use safe language. Not found publicly means the service was not clearly found in reviewed public pages, not that the competitor does not provide it.');
 
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
       smartScore: item.smartScore,
       competitorName: item.competitorName,
       serviceLine: item.serviceLine,
-      subservice: 'subservice' in item ? item.subservice : null,
+      subservice: item.subservice || null,
       status: item.competitorStatus,
       confidence: item.confidence,
       sourceUrl: item.sourceUrl,
