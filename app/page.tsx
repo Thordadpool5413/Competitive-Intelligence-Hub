@@ -8,6 +8,7 @@ import type { CompetitorInput, IntelligenceReport } from '../lib/types';
 type View = 'dashboard' | 'ai' | 'prompt' | 'intake' | 'matrix' | 'battlecards' | 'reports' | 'ask' | 'catalog' | 'diagnostics';
 type ReportSummary = { id: string; generatedAt: string; competitorsAnalyzed: number; pagesReviewed: number; potentialAndwellAdvantages: number; humanReviewItems: number; competitors: string[]; executiveSummary: string };
 type ApiCheck = { route: string; ok: boolean; status: number; message: string; preview?: string };
+type AnyAnalysis = NonNullable<IntelligenceReport['analyses']>[number];
 
 const nav: { key: View; label: string; note: string }[] = [
   { key: 'dashboard', label: 'Command Center', note: 'Executive snapshot' },
@@ -70,9 +71,10 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
   return <div className="metricCard"><p>{label}</p><strong>{value}</strong>{hint ? <span>{hint}</span> : null}</div>;
 }
 
-function ListBlock({ title, items }: { title: string; items?: string[] }) {
+function TagList({ items }: { items?: string[] }) {
   const safeItems = (items || []).filter(Boolean);
-  return <Panel title={title}>{safeItems.length ? <div className="tagCloud">{safeItems.map((item) => <span key={item}>{item}</span>)}</div> : <p className="muted">No AI items returned yet.</p>}</Panel>;
+  if (!safeItems.length) return <p className="muted">No items returned yet.</p>;
+  return <div className="tagCloud">{safeItems.map((item) => <span key={item}>{item}</span>)}</div>;
 }
 
 export default function Page() {
@@ -88,7 +90,7 @@ export default function Page() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  const aiAnalyses = currentReport?.analyses.filter((analysis) => analysis.aiExtraction) || [];
+  const aiAnalyses = currentReport?.analyses.filter((analysis) => Boolean(analysis.aiExtraction)) || [];
   const stats = useMemo(() => ({
     competitors: competitors.length,
     reports: reports.length,
@@ -232,29 +234,30 @@ function Dashboard({ stats, currentReport, setView, exportJson, clearLegacyBrows
   </>;
 }
 
-function AIIntelligence({ currentReport, aiAnalyses }: { currentReport: IntelligenceReport | null; aiAnalyses: NonNullable<IntelligenceReport['analyses']> }) {
+function AIIntelligence({ currentReport, aiAnalyses }: { currentReport: IntelligenceReport | null; aiAnalyses: AnyAnalysis[] }) {
   if (!currentReport) return <Panel title="No report loaded"><p>Run or load a report to see AI extraction output.</p></Panel>;
-  if (!currentReport.aiEnabled || !aiAnalyses.length) return <Panel title="AI extraction not available"><p>This report does not include AI extraction output. Confirm `OPENAI_API_KEY` is set in Hostinger, redeploy, then run analysis again.</p></Panel>;
+  if (!currentReport.aiEnabled || !aiAnalyses.length) return <Panel title="AI extraction not available"><p>This report does not include AI extraction output. Confirm OPENAI_API_KEY is set in Hostinger, redeploy, then run analysis again.</p></Panel>;
   return <>
     <section className="section"><div><h1>AI Intelligence</h1><p>Structured OpenAI extraction from crawled public pages: services, benefits, claims, programs, proof points, CTAs, advantages, safe language, review risk, and sales battlecards.</p></div><Badge tone="green">{currentReport.aiModel || 'OpenAI'} enabled</Badge></section>
     {currentReport.aiLeadershipSummary ? <section className="hero answerHero"><h2>Leadership Summary</h2><p>{currentReport.aiLeadershipSummary}</p></section> : null}
     <div className="grid">{aiAnalyses.map((analysis) => {
-      const ai = analysis.aiExtraction!;
+      const ai = analysis.aiExtraction;
+      if (!ai) return null;
       return <div className="card aiCard" key={analysis.id}>
         <div className="row spread"><div><h3>{analysis.name}</h3><p className="muted">{analysis.url}</p></div><Badge tone="green">AI confidence: {ai.rawConfidence}</Badge></div>
         <div className="grid cols3" style={{ marginTop: 18 }}>
-          <ListBlock title="Services mentioned" items={ai.servicesMentioned} />
-          <ListBlock title="Benefits mentioned" items={ai.benefitsMentioned} />
-          <ListBlock title="Claims made" items={ai.claimsMade} />
-          <ListBlock title="Programs offered" items={ai.programsOffered} />
-          <ListBlock title="Proof points" items={ai.proofPoints} />
-          <ListBlock title="Referral calls to action" items={ai.referralCallsToAction} />
-          <ListBlock title="Competitor advantages" items={ai.competitorAdvantages} />
-          <ListBlock title="Andwell advantages" items={ai.andwellAdvantages} />
-          <ListBlock title="Review risks" items={ai.reviewRisks} />
+          <Panel title="Services mentioned"><TagList items={ai.servicesMentioned} /></Panel>
+          <Panel title="Benefits mentioned"><TagList items={ai.benefitsMentioned} /></Panel>
+          <Panel title="Claims made"><TagList items={ai.claimsMade} /></Panel>
+          <Panel title="Programs offered"><TagList items={ai.programsOffered} /></Panel>
+          <Panel title="Proof points"><TagList items={ai.proofPoints} /></Panel>
+          <Panel title="Referral calls to action"><TagList items={ai.referralCallsToAction} /></Panel>
+          <Panel title="Competitor advantages"><TagList items={ai.competitorAdvantages} /></Panel>
+          <Panel title="Andwell advantages"><TagList items={ai.andwellAdvantages} /></Panel>
+          <Panel title="Review risks"><TagList items={ai.reviewRisks} /></Panel>
         </div>
-        <Panel title="AI service line depth"><div className="grid cols2">{ai.serviceLineDepth.map((item) => <div className="scoreCard" key={`${analysis.id}${item.serviceLine}`}><div className="row spread"><h3>{item.serviceLine}</h3><Badge tone={item.reviewRisk === 'High' ? 'red' : item.reviewRisk === 'Medium' ? 'amber' : 'green'}>{item.reviewRisk} review risk</Badge></div><p>{item.summary}</p><div className="scoreGrid"><Stat label="Depth" value={`${item.depthScore}%`} /><Stat label="Evidence" value={item.evidenceStrength} /></div></div>)}</div></Panel>
-        <Panel title="AI sales battlecards"><div className="grid cols2">{ai.salesBattlecards.map((card) => <div className="battleCard" key={`${analysis.id}${card.serviceLine}`}><h3>{card.serviceLine}</h3><p><strong>Lead with:</strong> {card.leadWith}</p><p><strong>Referral question:</strong> {card.referralQuestion}</p><p><strong>Objection response:</strong> {card.objectionResponse}</p><div className="notice"><strong>Safe language</strong><br />{card.safeSalesLanguage}</div><div className="error"><strong>Do not say</strong><br />{card.doNotSayLanguage}</div></div>)}</div></Panel>
+        <Panel title="AI service line depth"><div className="grid cols2">{(ai.serviceLineDepth || []).map((item) => <div className="scoreCard" key={`${analysis.id}${item.serviceLine}`}><div className="row spread"><h3>{item.serviceLine}</h3><Badge tone={item.reviewRisk === 'High' ? 'red' : item.reviewRisk === 'Medium' ? 'amber' : 'green'}>{item.reviewRisk} review risk</Badge></div><p>{item.summary}</p><div className="scoreGrid"><Stat label="Depth" value={`${item.depthScore}%`} /><Stat label="Evidence" value={item.evidenceStrength} /></div></div>)}</div></Panel>
+        <Panel title="AI sales battlecards"><div className="grid cols2">{(ai.salesBattlecards || []).map((card) => <div className="battleCard" key={`${analysis.id}${card.serviceLine}`}><h3>{card.serviceLine}</h3><p><strong>Lead with:</strong> {card.leadWith}</p><p><strong>Referral question:</strong> {card.referralQuestion}</p><p><strong>Objection response:</strong> {card.objectionResponse}</p><div className="notice"><strong>Safe language</strong><br />{card.safeSalesLanguage}</div><div className="error"><strong>Do not say</strong><br />{card.doNotSayLanguage}</div></div>)}</div></Panel>
       </div>;
     })}</div>
   </>;
@@ -294,5 +297,5 @@ function Catalog() {
 }
 
 function Diagnostics({ diagnostics, runDiagnostics, busy }: { diagnostics: ApiCheck[]; runDiagnostics: () => void; busy: boolean }) {
-  return <><section className="section"><div><h1>Diagnostics</h1><p>Confirms whether Hostinger is returning JSON or HTML for API routes. `/api/analyze` will also report whether OpenAI extraction is configured.</p></div><button className="btn primary" disabled={busy} onClick={runDiagnostics}>Run diagnostics</button></section><div className="grid">{diagnostics.map((item) => <Panel key={item.route} title={item.route}><div className="row"><Badge tone={item.ok ? 'green' : 'red'}>{item.ok ? 'OK' : 'Problem'}</Badge><Badge>{item.status}</Badge></div><p>{item.message}</p><p className="muted">{item.preview}</p></Panel>)}</div></>;
+  return <><section className="section"><div><h1>Diagnostics</h1><p>Confirms whether Hostinger is returning JSON or HTML for API routes. /api/analyze will also report whether OpenAI extraction is configured.</p></div><button className="btn primary" disabled={busy} onClick={runDiagnostics}>Run diagnostics</button></section><div className="grid">{diagnostics.map((item) => <Panel key={item.route} title={item.route}><div className="row"><Badge tone={item.ok ? 'green' : 'red'}>{item.ok ? 'OK' : 'Problem'}</Badge><Badge>{item.status}</Badge></div><p>{item.message}</p><p className="muted">{item.preview}</p></Panel>)}</div></>;
 }
