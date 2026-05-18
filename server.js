@@ -12,7 +12,7 @@ const hostname = process.env.HOST || '0.0.0.0';
 const dev = process.env.NODE_ENV === 'development';
 const startedAt = new Date().toISOString();
 const buildIdPath = join(process.cwd(), '.next', 'BUILD_ID');
-const deploymentMarker = 'server-post-json-guard-2026-05-17-08';
+const deploymentMarker = 'hostinger-node-supabase-ready-2026-05-18-01';
 
 let nextReady = false;
 let nextPrepareError = null;
@@ -99,10 +99,6 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, apiRouteProbe(url.pathname, req.method || 'GET'));
     }
     return sendHtml(res, 200, 'Competitive Intelligence Hub is starting', 'The Node process is alive. Next.js is still preparing or failed to prepare. Details are below.', JSON.stringify(runtimePayload(), null, 2));
-  }
-
-  if (req.method === 'GET' && ['/api/version', '/api/health', '/api/diagnostics', '/api/analyze'].includes(url.pathname)) {
-    return sendJson(res, 200, apiRouteProbe(url.pathname, req.method));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/analyze' && url.searchParams.get('runtimeProbe') === '1') {

@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  outputFileTracingRoot: __dirname,
   webpack: (config) => {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),

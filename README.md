@@ -10,7 +10,7 @@ The app has been upgraded from a browser only MVP into a stronger Competitive In
 
 New V2 foundation capabilities include:
 
-1. Server side persistent JSON store for reports, competitors, reviews, and catalog overrides
+1. Server side persistence for reports, competitors, reviews, and catalog overrides using Supabase, MongoDB, or local JSON fallback
 2. Stored competitor library through `/api/competitors`
 3. Stored intelligence reports through `/api/reports`
 4. Server saved review decisions through `/api/reviews`
@@ -129,7 +129,11 @@ PORT=3000
 CRAWL_MAX_PAGES_PER_SITE=24
 CRAWL_TIMEOUT_MS=12000
 CIH_DATA_DIR=.data
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
+
+For Supabase persistence, run `supabase/schema.sql` in the Supabase SQL editor, then add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Hostinger. Keep the service role key server side only. If Supabase is not configured, the app falls back to MongoDB when `MONGODB_URI` is set, then to the local JSON store.
 
 If Hostinger automatically injects a port, use the Hostinger provided port and do not hardcode another value.
 
@@ -182,4 +186,4 @@ The app intentionally says “Not found publicly” instead of saying a competit
 
 The app uses public website evidence. “Not found publicly” means the service or subservice was not clearly found in reviewed public pages. It does not prove the competitor does not provide that service.
 
-The current V2 foundation uses a server side JSON store for persistence. This is a major improvement over browser local storage and works for a single deployed app instance. A future enterprise version should move the store to PostgreSQL or Supabase so multiple servers, authenticated users, audit trails, and long term shared governance are fully supported.
+The current V2 foundation now supports Supabase persistence for shared hosted deployments, MongoDB as a secondary managed database option, and local JSON storage as a no-config fallback for a single deployed app instance.

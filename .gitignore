@@ -4,6 +4,7 @@ out
 dist
 build
 .data
+.codex-run
 .env
 .env.local
 .env.production
