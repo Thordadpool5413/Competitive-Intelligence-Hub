@@ -1,4 +1,5 @@
 import { andwellCatalog } from './andwell';
+import { buildExpertBrief } from './expert-engine';
 import type { CompetitorAnalysis, CompetitorInput, Confidence, CrawledPage, ExecutiveInsight, Finding, IntelligenceReport, Status, SubserviceFinding, CompetitorScore, ThreatLevel } from './types';
 
 function norm(text: string) {
@@ -51,8 +52,6 @@ const hints: Record<string, string[]> = {
   'Audiology': ['audiology','hearing','hearing loss','hearing aid'],
   'Maternal and Child Health': ['maternal','pediatric home health','children home health','medically fragile','postpartum','high risk pregnancy','g tube','feeding tube','perinatal hospice']
 };
-
-const proofTerms = ['award','accredit','certified','rating','star','testimonial','same day','24/7','twenty four','around the clock','outcome','quality','medicare','licensed','referral form'];
 
 function evidence(pages: CrawledPage[], terms: string[]) {
   return [...pages].sort((a, b) => score(b.text, terms) - score(a.text, terms))[0];
@@ -277,6 +276,7 @@ export function buildReport(analyses: CompetitorAnalysis[], crawlErrors: { url: 
   const potentialAndwellAdvantages = allFindings.filter((f) => f.competitorStatus !== 'Clearly offered').length;
   const humanReviewItems = allFindings.filter((f) => f.reviewStatus !== 'Sales usable with evidence').length + allSubserviceFindings.filter((f) => f.reviewStatus !== 'Sales usable with evidence').length;
   const topScore = [...competitorScores].sort((a, b) => b.andwellDifferentiationScore - a.andwellDifferentiationScore)[0];
+  const expertBrief = buildExpertBrief(analyses, competitorScores, allFindings, allSubserviceFindings, humanReviewItems);
   return {
     id: `report_${Date.now()}`,
     generatedAt: new Date().toISOString(),
@@ -288,12 +288,13 @@ export function buildReport(analyses: CompetitorAnalysis[], crawlErrors: { url: 
     matchedServiceFindings,
     potentialAndwellAdvantages,
     humanReviewItems,
-    executiveSummary: `This analysis compared Andwell Health Partners against ${analyses.length} competitor website${analyses.length === 1 ? '' : 's'} using public website evidence. The system created ${allSubserviceFindings.length} subservice level findings, found ${matchedServiceFindings} clearly matched service line findings, and identified ${potentialAndwellAdvantages} potential Andwell advantage findings. ${topScore ? `The strongest differentiation opportunity appears to be against ${topScore.competitorName}.` : ''} Not found publicly means the service was not clearly found in reviewed public pages, not that the competitor definitively does not provide it.`,
+    executiveSummary: `This analysis compared Andwell Health Partners against ${analyses.length} competitor website${analyses.length === 1 ? '' : 's'} using public website evidence. The system created ${allSubserviceFindings.length} subservice level findings, found ${matchedServiceFindings} clearly matched service line findings, and identified ${potentialAndwellAdvantages} potential Andwell advantage findings. ${topScore ? `The strongest differentiation opportunity appears to be against ${topScore.competitorName}.` : ''} Not found publicly means the service was not clearly found in reviewed public pages, not that the competitor definitively does not provide it. Expert score: ${expertBrief.expertScore}.`,
     executiveInsights: executiveInsights(competitorScores, humanReviewItems),
     competitorScores,
     analyses,
     allFindings,
     allSubserviceFindings,
-    crawlErrors
+    crawlErrors,
+    expertBrief
   };
 }
