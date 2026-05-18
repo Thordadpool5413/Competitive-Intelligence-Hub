@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readStore } from '../../../lib/store';
+import { fieldActionFromEvidence, questionTerms, rankEvidenceForQuestion } from '../../../lib/smart-ranking';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,12 +12,6 @@ function norm(value: string) {
 function includesAny(text: string, terms: string[]) {
   const normalized = norm(text);
   return terms.some((term) => normalized.includes(norm(term)));
-}
-
-function keyTerms(question: string) {
-  return norm(question)
-    .split(' ')
-    .filter((word) => word.length > 3 && !['what','where','when','which','with','that','this','they','them','does','andwell','competitor','compare','offer','offers','service','services'].includes(word));
 }
 
 export async function POST(req: NextRequest) {
@@ -31,42 +26,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       answer: 'No stored intelligence report was found yet. Run a competitor analysis first, then ask again.',
       evidence: [],
-      confidence: 'Needs review'
+      confidence: 'Needs review',
+      nextBestActions: []
     });
   }
 
-  const terms = keyTerms(question);
+  const terms = questionTerms(question);
   const allItems = [
     ...latest.allFindings.map((finding) => ({ type: 'service', ...finding })),
     ...latest.allSubserviceFindings.map((finding) => ({ type: 'subservice', ...finding }))
   ];
 
-  const filtered = allItems
+  const candidateItems = allItems
     .filter((item) => !body.competitorName || item.competitorName.toLowerCase().includes(body.competitorName.toLowerCase()))
     .filter((item) => !body.serviceLine || item.serviceLine.toLowerCase().includes(body.serviceLine.toLowerCase()))
     .filter((item) => {
       if (!terms.length) return true;
-      return includesAny(`${item.competitorName} ${item.serviceLine} ${'subservice' in item ? item.subservice : ''} ${item.safeSalesWording} ${item.evidenceExcerpt}`, terms);
-    })
-    .slice(0, 12);
+      return includesAny(`${item.competitorName} ${item.serviceLine} ${'subservice' in item ? item.subservice : ''} ${item.safeSalesWording} ${item.evidenceExcerpt} ${item.sourceTitle || ''}`, terms);
+    });
 
-  const potentialAdvantages = filtered.filter((item) => item.competitorStatus !== 'Clearly offered').slice(0, 5);
-  const matches = filtered.filter((item) => item.competitorStatus === 'Clearly offered').slice(0, 5);
-  const reviewItems = filtered.filter((item) => item.reviewStatus !== 'Sales usable with evidence').slice(0, 5);
+  const ranked = rankEvidenceForQuestion(candidateItems, question).slice(0, 12);
+  const potentialAdvantages = ranked.filter((item) => item.competitorStatus !== 'Clearly offered').slice(0, 5);
+  const matches = ranked.filter((item) => item.competitorStatus === 'Clearly offered').slice(0, 5);
+  const reviewItems = ranked.filter((item) => item.reviewStatus !== 'Sales usable with evidence' && item.reviewStatus !== 'Approved for sales use').slice(0, 5);
+  const topEvidence = ranked.slice(0, 3);
+  const nextBestActions = topEvidence.map(fieldActionFromEvidence);
 
   const answerParts = [];
-  answerParts.push(`Based on the latest stored report from ${new Date(latest.generatedAt).toLocaleString()}, I found ${filtered.length} relevant finding${filtered.length === 1 ? '' : 's'}.`);
-  if (potentialAdvantages.length) answerParts.push(`Potential Andwell advantages: ${potentialAdvantages.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
-  if (matches.length) answerParts.push(`Public matches found: ${matches.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
-  if (reviewItems.length) answerParts.push(`Review needed before sales use: ${reviewItems.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  answerParts.push(`Based on the latest stored report from ${new Date(latest.generatedAt).toLocaleString()}, I found ${ranked.length} relevant finding${ranked.length === 1 ? '' : 's'} and ranked them by question fit, evidence strength, confidence, source quality, and sales usability.`);
+  if (topEvidence.length) {
+    answerParts.push(`Top evidence: ${topEvidence.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''} | ${item.competitorStatus}`).join('; ')}.`);
+  }
+  if (potentialAdvantages.length) answerParts.push(`Potential Andwell advantages: ${potentialAdvantages.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (matches.length) answerParts.push(`Public matches found: ${matches.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (reviewItems.length) answerParts.push(`Review needed before sales use: ${reviewItems.map((item) => `${item.competitorName} | ${item.serviceLine}${'subservice' in item && item.subservice ? ` | ${item.subservice}` : ''}`).join('; ')}.`);
+  if (nextBestActions.length) answerParts.push(`Recommended next move: ${nextBestActions[0]}`);
   answerParts.push('Use safe language. Not found publicly means the service was not clearly found in reviewed public pages, not that the competitor does not provide it.');
 
   return NextResponse.json({
     answer: answerParts.join(' '),
     confidence: reviewItems.length ? 'Manager review suggested' : 'Evidence backed',
     reportId: latest.id,
-    evidence: filtered.map((item) => ({
+    questionTerms: terms,
+    nextBestActions,
+    evidence: ranked.map((item) => ({
       type: item.type,
+      smartScore: item.smartScore,
       competitorName: item.competitorName,
       serviceLine: item.serviceLine,
       subservice: 'subservice' in item ? item.subservice : null,
@@ -76,11 +81,12 @@ export async function POST(req: NextRequest) {
       sourceTitle: item.sourceTitle,
       evidenceExcerpt: item.evidenceExcerpt,
       safeSalesWording: item.safeSalesWording,
-      reviewStatus: item.reviewStatus
+      reviewStatus: item.reviewStatus,
+      recommendedAction: fieldActionFromEvidence(item)
     }))
   });
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, route: '/api/ask', message: 'Ask the Hub is active. Use POST with a question.' });
+  return NextResponse.json({ ok: true, route: '/api/ask', message: 'Ask the Hub is active with smart evidence ranking. Use POST with a question.' });
 }
