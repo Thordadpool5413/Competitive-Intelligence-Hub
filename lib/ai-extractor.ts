@@ -1,5 +1,6 @@
 import https from 'node:https';
 import { andwellCatalog } from './andwell';
+import { selectBestPromptPages } from './smart-ranking';
 import type { AICompetitorExtraction, CompetitorInput, CrawledPage } from './types';
 
 const defaultModel = process.env.OPENAI_MODEL || 'gpt-4.1-nano';
@@ -128,12 +129,7 @@ function promptFor(input: CompetitorInput, pages: CrawledPage[]) {
     avoid: service.avoid
   }));
 
-  const pageBundle = pages.slice(0, maxPagesForPrompt).map((page, index) => ({
-    index: index + 1,
-    url: page.url,
-    title: page.title,
-    excerpt: page.text.slice(0, maxCharsPerPage)
-  }));
+  const pageBundle = selectBestPromptPages(pages, maxPagesForPrompt, maxCharsPerPage);
 
   return `You are an expert healthcare competitive intelligence analyst for Andwell Health Partners.
 
@@ -145,6 +141,7 @@ Safety and compliance rules:
 3. Separate clearly offered services from vague mentions, related but not equivalent language, and unclear evidence.
 4. Create sales language that is safe, evidence based, and manager review friendly.
 5. Compare at both service line and subservice level.
+6. Prioritize pages with higher intelligenceScore when evidence conflicts.
 
 Required JSON keys:
 providerName, servicesMentioned, benefitsMentioned, claimsMade, programsOffered, proofPoints, referralCallsToAction, serviceLineDepth, subserviceDepth, competitorAdvantages, andwellAdvantages, safeSalesLanguage, doNotSayLanguage, reviewRisks, leadershipSummary, salesBattlecards, rawConfidence.
@@ -155,7 +152,7 @@ ${JSON.stringify({ name: providerName(input), url: input.url, market: input.mark
 Andwell service catalog:
 ${JSON.stringify(catalog)}
 
-Competitor crawled pages:
+Competitor crawled pages, pre ranked by relevance:
 ${JSON.stringify(pageBundle)}
 
 Return JSON in this exact shape:
@@ -329,6 +326,7 @@ export function getAITransportDiagnostics() {
     maxPagesForPrompt,
     maxCharsPerPage,
     maxOutputTokens,
+    promptPageSelection: 'smart relevance ranking',
     transport: 'fetch with native Node HTTPS TLS fallback'
   };
 }
