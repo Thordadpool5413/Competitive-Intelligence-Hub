@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/hostinger-build.js",
+    "build:next": "next build",
     "start": "node server.js",
     "serve": "node server.js",
     "hostinger:start": "node server.js",
