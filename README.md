@@ -98,6 +98,8 @@ npm start
 
 The production server starts from `server.js` and listens on `process.env.PORT` or `3000`.
 
+`server.js` is intentionally a Hostinger safe bootstrapper. It opens the Node.js listener before loading Next.js, then refreshes missing dependencies or stale build output in the background. That prevents GitHub pulls from dropping the public site into a Hostinger 503 while `npm install`, `npm run build`, or Next.js prepare catches up.
+
 ## Hostinger settings
 
 Use Node.js version 24 or newer.
@@ -129,6 +131,8 @@ PORT=3000
 CRAWL_MAX_PAGES_PER_SITE=24
 CRAWL_TIMEOUT_MS=12000
 CIH_DATA_DIR=.data
+CIH_AUTO_INSTALL=1
+CIH_AUTO_BUILD=1
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
@@ -136,6 +140,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 For Supabase persistence, run `supabase/schema.sql` in the Supabase SQL editor, then add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Hostinger. Keep the service role key server side only. If Supabase is not configured, the app falls back to MongoDB when `MONGODB_URI` is set, then to the local JSON store.
 
 If Hostinger automatically injects a port, use the Hostinger provided port and do not hardcode another value.
+
+Leave `CIH_AUTO_INSTALL` and `CIH_AUTO_BUILD` enabled on Hostinger. Set either one to `0` only when you want Hostinger's panel to handle that step before the app starts.
 
 ## GitHub to Hostinger workflow
 
@@ -151,6 +157,8 @@ If Hostinger automatically injects a port, use the Hostinger provided port and d
 10. Set the startup file to `server.js` if Hostinger asks for it.
 11. Add the environment variables.
 12. Deploy.
+
+After a GitHub pull, open `/api/runtime`. If the app is still preparing, that route shows whether it is installing dependencies, rebuilding Next.js, or loading the app.
 
 ## Health check
 
