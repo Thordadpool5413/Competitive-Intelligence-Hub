@@ -18,6 +18,10 @@ function safeText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function optionalText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 function arrayOfStrings(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 30) : [];
 }
@@ -80,7 +84,7 @@ function normalizeExtraction(raw: any, input: CompetitorInput): AICompetitorExtr
       status: status(item?.status),
       confidence: confidence(item?.confidence),
       evidenceExcerpt: safeText(item?.evidenceExcerpt, 'No evidence excerpt returned by AI.'),
-      sourceUrl: safeText(item?.sourceUrl, undefined as unknown as string),
+      sourceUrl: optionalText(item?.sourceUrl),
       safeSalesLanguage: safeText(item?.safeSalesLanguage, 'Use evidence based language and verify before sales use.'),
       doNotSayLanguage: safeText(item?.doNotSayLanguage, 'Do not overstate competitor differences without approved evidence.')
     })) : [],
