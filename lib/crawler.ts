@@ -80,13 +80,15 @@ function scoreUrl(url: string) {
 }
 
 async function fetchHtml(url: string, redirectCount = 0): Promise<string> {
-  requireSafePublicTarget(url);
+  const safeUrl = normalize(url);
+  if (!safeUrl) throw new Error('Invalid URL. Use a complete public website address.');
+  requireSafePublicTarget(safeUrl);
   if (redirectCount > 5) throw new Error('Too many redirects while crawling website.');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(process.env.CRAWL_TIMEOUT_MS || 12000));
   try {
-    const res = await fetch(url, {
+    const res = await fetch(safeUrl, {
       redirect: 'manual',
       signal: controller.signal,
       headers: {
@@ -97,7 +99,7 @@ async function fetchHtml(url: string, redirectCount = 0): Promise<string> {
 
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get('location');
-      const next = location ? normalize(location, url) : null;
+      const next = location ? normalize(location, safeUrl) : null;
       if (!next) throw new Error('Redirect destination was not readable.');
       requireSafePublicTarget(next);
       return fetchHtml(next, redirectCount + 1);
