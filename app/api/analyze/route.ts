@@ -8,6 +8,12 @@ import type { CompetitorAnalysis, CompetitorInput, CrawledPage } from '../../../
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type AnalyzeResult = {
+  analysis: CompetitorAnalysis;
+  crawlError?: { url: string; error: string };
+  aiError?: { url: string; error: string };
+};
+
 function cleanHost(hostname: string) {
   return hostname.toLowerCase().trim().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '');
 }
@@ -98,14 +104,40 @@ function applyAIEnhancement(analysis: CompetitorAnalysis, aiExtraction: NonNulla
   };
 }
 
+function analyzeConcurrency(shouldUseAI: boolean) {
+  const fallback = shouldUseAI ? 3 : 5;
+  const requested = Number(process.env.ANALYZE_CONCURRENCY || fallback);
+  const ceiling = shouldUseAI ? 5 : 8;
+  if (!Number.isFinite(requested)) return fallback;
+  return Math.max(1, Math.min(ceiling, Math.floor(requested)));
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
+}
+
 export async function GET() {
+  const aiConfigured = isAIExtractionConfigured();
   return NextResponse.json({
     ok: true,
     route: '/api/analyze',
-    aiConfigured: isAIExtractionConfigured(),
+    aiConfigured,
+    analyzeConcurrency: analyzeConcurrency(aiConfigured),
     urlValidation: 'enabled at request boundary and crawler boundary',
-    message: isAIExtractionConfigured()
-      ? 'Analyze API route is active with OpenAI extraction enabled.'
+    message: aiConfigured
+      ? 'Analyze API route is active with OpenAI extraction enabled and controlled parallel processing.'
       : 'Analyze API route is active. OpenAI extraction is not enabled because OPENAI_API_KEY is missing.',
     checkedAt: new Date().toISOString()
   });
@@ -126,45 +158,49 @@ export async function POST(req: NextRequest) {
     }
 
     const maxPages = Math.min(Math.max(body.maxPagesPerSite || Number(process.env.CRAWL_MAX_PAGES_PER_SITE || 24), 4), 35);
-    const analyses: CompetitorAnalysis[] = [];
-    const crawlErrors: { url: string; error: string }[] = [];
-    const aiErrors: { url: string; error: string }[] = [];
     const shouldUseAI = body.useAI !== false && isAIExtractionConfigured();
+    const concurrency = analyzeConcurrency(shouldUseAI);
 
-    for (let i = 0; i < competitors.length; i += 1) {
-      const competitor = competitors[i];
+    const results = await mapWithConcurrency<CompetitorInput, AnalyzeResult>(competitors, concurrency, async (competitor, index) => {
       try {
         const pages = await crawlSite(competitor.url, maxPages);
-        let analysis = analyzeCompetitor(competitor, pages, i);
+        let analysis = analyzeCompetitor(competitor, pages, index);
+        let aiError: AnalyzeResult['aiError'];
 
         if (shouldUseAI) {
           try {
             const aiExtraction = await extractCompetitorIntelligence(competitor, pages);
             if (aiExtraction) analysis = applyAIEnhancement(analysis, aiExtraction);
           } catch (error) {
-            aiErrors.push({ url: competitor.url, error: error instanceof Error ? error.message : 'Unknown AI extraction error' });
+            aiError = { url: competitor.url, error: error instanceof Error ? error.message : 'Unknown AI extraction error' };
           }
         }
 
-        analyses.push(analysis);
+        return { analysis, aiError };
       } catch (error) {
-        crawlErrors.push({ url: competitor.url, error: error instanceof Error ? error.message : 'Unknown crawl error' });
         const fallbackPage: CrawledPage = {
           url: competitor.url,
           title: 'Crawl limitation',
           text: '',
           excerpt: 'No readable public content could be extracted from this website.'
         };
-        analyses.push(analyzeCompetitor(competitor, [fallbackPage], i));
+        return {
+          analysis: analyzeCompetitor(competitor, [fallbackPage], index),
+          crawlError: { url: competitor.url, error: error instanceof Error ? error.message : 'Unknown crawl error' }
+        };
       }
-    }
+    });
 
+    const analyses = results.map((item) => item.analysis);
+    const crawlErrors = results.map((item) => item.crawlError).filter((item): item is NonNullable<AnalyzeResult['crawlError']> => Boolean(item));
+    const aiErrors = results.map((item) => item.aiError).filter((item): item is NonNullable<AnalyzeResult['aiError']> => Boolean(item));
     const report = buildReport(analyses, [...crawlErrors, ...aiErrors.map((item) => ({ url: item.url, error: `AI extraction: ${item.error}` }))]);
     const aiSummaries = analyses.map((analysis) => analysis.aiExtraction?.leadershipSummary).filter(Boolean);
     const enhancedReport = {
       ...report,
       aiEnabled: shouldUseAI,
       aiModel: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+      analysisConcurrency: concurrency,
       aiLeadershipSummary: aiSummaries.length ? aiSummaries.join('\n\n') : undefined,
       executiveSummary: aiSummaries.length
         ? `${report.executiveSummary}\n\nAI leadership summary: ${aiSummaries.join(' ')}`
