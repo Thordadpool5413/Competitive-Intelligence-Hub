@@ -127,66 +127,94 @@ async function jsonWriteStore(store: HubStore) {
   return next;
 }
 
+function logPersistenceFallback(provider: string, error: unknown) {
+  console.error(`${provider} persistence failed. Falling back to local JSON storage.`, error);
+}
+
 export async function readStore(): Promise<HubStore> {
-  if (isSupabaseConfigured()) return supabaseReadStore();
-  if (isMongoConfigured()) return mongoReadStore();
+  if (isSupabaseConfigured()) {
+    try {
+      return await supabaseReadStore();
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
+    }
+  }
+
+  if (isMongoConfigured()) {
+    try {
+      return await mongoReadStore();
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
+  }
+
   return jsonReadStore();
 }
 
 export async function writeStore(store: HubStore) {
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const [competitorsDelete, reportsDelete, reviewsDelete, catalogDelete] = await Promise.all([
-      supabase.from('cih_competitors').delete().neq('url', '__cih_never__'),
-      supabase.from('cih_reports').delete().neq('id', '__cih_never__'),
-      supabase.from('cih_reviews').delete().neq('finding_id', '__cih_never__'),
-      supabase.from('cih_catalog_overrides').delete().neq('service_line', '__cih_never__')
-    ]);
+    try {
+      const supabase = getSupabaseClient();
+      const [competitorsDelete, reportsDelete, reviewsDelete, catalogDelete] = await Promise.all([
+        supabase.from('cih_competitors').delete().neq('url', '__cih_never__'),
+        supabase.from('cih_reports').delete().neq('id', '__cih_never__'),
+        supabase.from('cih_reviews').delete().neq('finding_id', '__cih_never__'),
+        supabase.from('cih_catalog_overrides').delete().neq('service_line', '__cih_never__')
+      ]);
 
-    assertSupabase('delete competitors', competitorsDelete.error);
-    assertSupabase('delete reports', reportsDelete.error);
-    assertSupabase('delete reviews', reviewsDelete.error);
-    assertSupabase('delete catalog overrides', catalogDelete.error);
+      assertSupabase('delete competitors', competitorsDelete.error);
+      assertSupabase('delete reports', reportsDelete.error);
+      assertSupabase('delete reviews', reviewsDelete.error);
+      assertSupabase('delete catalog overrides', catalogDelete.error);
 
-    const [competitorsInsert, reportsInsert, reviewsInsert, catalogInsert] = await Promise.all([
-      store.competitors.length ? supabase.from('cih_competitors').insert(store.competitors.filter((competitor) => competitor.url).map(competitorRow)) : Promise.resolve({ error: null }),
-      store.reports.length ? supabase.from('cih_reports').insert(store.reports.map(reportRow)) : Promise.resolve({ error: null }),
-      store.reviews.length ? supabase.from('cih_reviews').insert(store.reviews.map(reviewRow)) : Promise.resolve({ error: null }),
-      store.catalogOverrides.length ? supabase.from('cih_catalog_overrides').insert(store.catalogOverrides.map(catalogOverrideRow)) : Promise.resolve({ error: null })
-    ]);
+      const [competitorsInsert, reportsInsert, reviewsInsert, catalogInsert] = await Promise.all([
+        store.competitors.length ? supabase.from('cih_competitors').insert(store.competitors.filter((competitor) => competitor.url).map(competitorRow)) : Promise.resolve({ error: null }),
+        store.reports.length ? supabase.from('cih_reports').insert(store.reports.map(reportRow)) : Promise.resolve({ error: null }),
+        store.reviews.length ? supabase.from('cih_reviews').insert(store.reviews.map(reviewRow)) : Promise.resolve({ error: null }),
+        store.catalogOverrides.length ? supabase.from('cih_catalog_overrides').insert(store.catalogOverrides.map(catalogOverrideRow)) : Promise.resolve({ error: null })
+      ]);
 
-    assertSupabase('insert competitors', competitorsInsert.error);
-    assertSupabase('insert reports', reportsInsert.error);
-    assertSupabase('insert reviews', reviewsInsert.error);
-    assertSupabase('insert catalog overrides', catalogInsert.error);
+      assertSupabase('insert competitors', competitorsInsert.error);
+      assertSupabase('insert reports', reportsInsert.error);
+      assertSupabase('insert reviews', reviewsInsert.error);
+      assertSupabase('insert catalog overrides', catalogInsert.error);
 
-    return { ...store, updatedAt: new Date().toISOString() };
+      return { ...store, updatedAt: new Date().toISOString() };
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
+      return jsonWriteStore(store);
+    }
   }
 
   if (!isMongoConfigured()) return jsonWriteStore(store);
 
-  const [competitorsCol, reportsCol, reviewsCol, catalogCol] = await Promise.all([
-    collection<CompetitorInput>('competitors'),
-    collection<IntelligenceReport>('reports'),
-    collection<StoredReview>('reviews'),
-    collection<CatalogOverride>('catalogOverrides')
-  ]);
+  try {
+    const [competitorsCol, reportsCol, reviewsCol, catalogCol] = await Promise.all([
+      collection<CompetitorInput>('competitors'),
+      collection<IntelligenceReport>('reports'),
+      collection<StoredReview>('reviews'),
+      collection<CatalogOverride>('catalogOverrides')
+    ]);
 
-  await Promise.all([
-    competitorsCol.deleteMany({}),
-    reportsCol.deleteMany({}),
-    reviewsCol.deleteMany({}),
-    catalogCol.deleteMany({})
-  ]);
+    await Promise.all([
+      competitorsCol.deleteMany({}),
+      reportsCol.deleteMany({}),
+      reviewsCol.deleteMany({}),
+      catalogCol.deleteMany({})
+    ]);
 
-  await Promise.all([
-    store.competitors.length ? competitorsCol.insertMany(store.competitors) : Promise.resolve(),
-    store.reports.length ? reportsCol.insertMany(store.reports) : Promise.resolve(),
-    store.reviews.length ? reviewsCol.insertMany(store.reviews) : Promise.resolve(),
-    store.catalogOverrides.length ? catalogCol.insertMany(store.catalogOverrides) : Promise.resolve()
-  ]);
+    await Promise.all([
+      store.competitors.length ? competitorsCol.insertMany(store.competitors) : Promise.resolve(),
+      store.reports.length ? reportsCol.insertMany(store.reports) : Promise.resolve(),
+      store.reviews.length ? reviewsCol.insertMany(store.reviews) : Promise.resolve(),
+      store.catalogOverrides.length ? catalogCol.insertMany(store.catalogOverrides) : Promise.resolve()
+    ]);
 
-  return { ...store, updatedAt: new Date().toISOString() };
+    return { ...store, updatedAt: new Date().toISOString() };
+  } catch (error) {
+    logPersistenceFallback('MongoDB', error);
+    return jsonWriteStore(store);
+  }
 }
 
 function competitorRow(competitor: CompetitorInput) {
@@ -226,20 +254,28 @@ function catalogOverrideRow(override: CatalogOverride) {
 
 export async function saveCompetitors(competitors: CompetitorInput[]) {
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const normalized = competitors.filter((competitor) => competitor.url);
-    if (normalized.length) {
-      const result = await supabase.from('cih_competitors').upsert(normalized.map(competitorRow), { onConflict: 'url' });
-      assertSupabase('upsert competitors', result.error);
+    try {
+      const supabase = getSupabaseClient();
+      const normalized = competitors.filter((competitor) => competitor.url);
+      if (normalized.length) {
+        const result = await supabase.from('cih_competitors').upsert(normalized.map(competitorRow), { onConflict: 'url' });
+        assertSupabase('upsert competitors', result.error);
+      }
+      return readStore();
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
     }
-    return readStore();
   }
 
   if (isMongoConfigured()) {
-    const col = await collection<CompetitorInput>('competitors');
-    const normalized = competitors.filter((competitor) => competitor.url);
-    await Promise.all(normalized.map((competitor) => col.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
-    return readStore();
+    try {
+      const col = await collection<CompetitorInput>('competitors');
+      const normalized = competitors.filter((competitor) => competitor.url);
+      await Promise.all(normalized.map((competitor) => col.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
+      return readStore();
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
   }
 
   const store = await readStore();
@@ -253,24 +289,32 @@ export async function saveCompetitors(competitors: CompetitorInput[]) {
 
 export async function saveReport(report: IntelligenceReport) {
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const reportResult = await supabase.from('cih_reports').upsert(reportRow(report), { onConflict: 'id' });
-    assertSupabase('upsert report', reportResult.error);
-    const reportCompetitors = report.analyses.map((analysis) => ({ name: analysis.name, url: analysis.url, market: analysis.market }));
-    if (reportCompetitors.length) {
-      const competitorsResult = await supabase.from('cih_competitors').upsert(reportCompetitors.map(competitorRow), { onConflict: 'url' });
-      assertSupabase('upsert report competitors', competitorsResult.error);
+    try {
+      const supabase = getSupabaseClient();
+      const reportResult = await supabase.from('cih_reports').upsert(reportRow(report), { onConflict: 'id' });
+      assertSupabase('upsert report', reportResult.error);
+      const reportCompetitors = report.analyses.map((analysis) => ({ name: analysis.name, url: analysis.url, market: analysis.market }));
+      if (reportCompetitors.length) {
+        const competitorsResult = await supabase.from('cih_competitors').upsert(reportCompetitors.map(competitorRow), { onConflict: 'url' });
+        assertSupabase('upsert report competitors', competitorsResult.error);
+      }
+      return readStore();
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
     }
-    return readStore();
   }
 
   if (isMongoConfigured()) {
-    const reportsCol = await collection<IntelligenceReport>('reports');
-    const competitorsCol = await collection<CompetitorInput>('competitors');
-    await reportsCol.updateOne({ id: report.id }, { $set: report }, { upsert: true });
-    const reportCompetitors = report.analyses.map((analysis) => ({ name: analysis.name, url: analysis.url, market: analysis.market }));
-    await Promise.all(reportCompetitors.map((competitor) => competitorsCol.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
-    return readStore();
+    try {
+      const reportsCol = await collection<IntelligenceReport>('reports');
+      const competitorsCol = await collection<CompetitorInput>('competitors');
+      await reportsCol.updateOne({ id: report.id }, { $set: report }, { upsert: true });
+      const reportCompetitors = report.analyses.map((analysis) => ({ name: analysis.name, url: analysis.url, market: analysis.market }));
+      await Promise.all(reportCompetitors.map((competitor) => competitorsCol.updateOne({ url: competitor.url }, { $set: competitor }, { upsert: true })));
+      return readStore();
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
   }
 
   const store = await readStore();
@@ -287,18 +331,26 @@ export async function saveReport(report: IntelligenceReport) {
 
 export async function getReport(reportId: string) {
   if (isSupabaseConfigured()) {
-    const result = await getSupabaseClient()
-      .from('cih_reports')
-      .select('payload')
-      .eq('id', reportId)
-      .maybeSingle();
-    assertSupabase('get report', result.error);
-    return result.data ? result.data.payload as IntelligenceReport : null;
+    try {
+      const result = await getSupabaseClient()
+        .from('cih_reports')
+        .select('payload')
+        .eq('id', reportId)
+        .maybeSingle();
+      assertSupabase('get report', result.error);
+      return result.data ? result.data.payload as IntelligenceReport : null;
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
+    }
   }
 
   if (isMongoConfigured()) {
-    const col = await collection<IntelligenceReport>('reports');
-    return col.findOne({ id: reportId }, { projection: { _id: 0 } });
+    try {
+      const col = await collection<IntelligenceReport>('reports');
+      return col.findOne({ id: reportId }, { projection: { _id: 0 } });
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
   }
 
   const store = await readStore();
@@ -310,15 +362,23 @@ export async function saveReview(input: Omit<StoredReview, 'id' | 'updatedAt'> &
   const review: StoredReview = { ...input, id, updatedAt: new Date().toISOString() };
 
   if (isSupabaseConfigured()) {
-    const result = await getSupabaseClient().from('cih_reviews').upsert(reviewRow(review), { onConflict: 'finding_id' });
-    assertSupabase('upsert review', result.error);
-    return review;
+    try {
+      const result = await getSupabaseClient().from('cih_reviews').upsert(reviewRow(review), { onConflict: 'finding_id' });
+      assertSupabase('upsert review', result.error);
+      return review;
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
+    }
   }
 
   if (isMongoConfigured()) {
-    const col = await collection<StoredReview>('reviews');
-    await col.updateOne({ findingId: input.findingId }, { $set: review }, { upsert: true });
-    return review;
+    try {
+      const col = await collection<StoredReview>('reviews');
+      await col.updateOne({ findingId: input.findingId }, { $set: review }, { upsert: true });
+      return review;
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
   }
 
   const store = await readStore();
@@ -331,15 +391,23 @@ export async function saveCatalogOverride(input: Omit<CatalogOverride, 'updatedA
   const override: CatalogOverride = { ...input, updatedAt: new Date().toISOString() };
 
   if (isSupabaseConfigured()) {
-    const result = await getSupabaseClient().from('cih_catalog_overrides').upsert(catalogOverrideRow(override), { onConflict: 'service_line' });
-    assertSupabase('upsert catalog override', result.error);
-    return override;
+    try {
+      const result = await getSupabaseClient().from('cih_catalog_overrides').upsert(catalogOverrideRow(override), { onConflict: 'service_line' });
+      assertSupabase('upsert catalog override', result.error);
+      return override;
+    } catch (error) {
+      logPersistenceFallback('Supabase', error);
+    }
   }
 
   if (isMongoConfigured()) {
-    const col = await collection<CatalogOverride>('catalogOverrides');
-    await col.updateOne({ serviceLine: input.serviceLine }, { $set: override }, { upsert: true });
-    return override;
+    try {
+      const col = await collection<CatalogOverride>('catalogOverrides');
+      await col.updateOne({ serviceLine: input.serviceLine }, { $set: override }, { upsert: true });
+      return override;
+    } catch (error) {
+      logPersistenceFallback('MongoDB', error);
+    }
   }
 
   const store = await readStore();
