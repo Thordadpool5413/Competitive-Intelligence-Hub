@@ -2,20 +2,19 @@
   "name": "competitive-intelligence-hub",
   "version": "1.0.0",
   "private": true,
-  "description": "Andwell Health Partners competitive service line intelligence hub for Hostinger Next.js hosting.",
+  "description": "Andwell Health Partners competitive service line intelligence hub for Hostinger managed Next.js hosting.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "build:next": "next build",
-    "build:hostinger": "node scripts/hostinger-build.js",
+    "build:hostinger": "next build",
     "build:strict": "CIH_STRICT_BUILD=1 next build",
     "typecheck": "tsc --noEmit",
-    "start": "node scripts/start-next.js",
-    "serve": "node scripts/start-next.js",
-    "hostinger:start": "node scripts/start-next.js",
-    "start:hostinger": "node scripts/start-next.js",
-    "start:custom": "node server.js",
-    "start:next": "node scripts/start-next.js"
+    "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "serve": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "hostinger:start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "start:hostinger": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "start:custom": "node server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
@@ -35,6 +34,6 @@
     "postcss": "8.5.10"
   },
   "engines": {
-    "node": ">=18.18.0 <25"
+    "node": "20.x"
   }
 }
