@@ -56,9 +56,34 @@ function toSafePublicHttpUrl(rawUrl: string): string | null {
   }
 }
 
+function getAllowedHostPatterns(): string[] {
+  return (process.env.CRAWL_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function matchesAllowedHost(hostname: string, patterns: string[]): boolean {
+  const host = hostname.toLowerCase();
+  return patterns.some((pattern) => {
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(2);
+      return host === suffix || host.endsWith(`.${suffix}`);
+    }
+    return host === pattern;
+  });
+}
+
 function sanitizeCompetitorInput(item: CompetitorInput): CompetitorInput | null {
   const safeUrl = toSafePublicHttpUrl(item.url || '');
   if (!safeUrl) return null;
+
+  const patterns = getAllowedHostPatterns();
+  if (patterns.length) {
+    const host = new URL(safeUrl).hostname.toLowerCase();
+    if (!matchesAllowedHost(host, patterns)) return null;
+  }
+
   return {
     ...item,
     url: safeUrl
