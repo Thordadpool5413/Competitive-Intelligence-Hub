@@ -1,9 +1,9 @@
 const { spawnSync } = require('child_process');
 
-const runRealBuild = process.env.CIH_DEPLOY_BUILD === '1' || process.env.HOSTINGER_RUN_NEXT_BUILD === '1';
+const skipRealBuild = process.env.CIH_SKIP_DEPLOY_BUILD === '1' || process.env.HOSTINGER_SKIP_NEXT_BUILD === '1';
 
-if (!runRealBuild) {
-  console.log('Hostinger deploy build skipped on purpose. The runtime server starts immediately and performs the real Next.js build after it is already responding to traffic. Set CIH_DEPLOY_BUILD=1 to force next build during deploy.');
+if (skipRealBuild) {
+  console.log('Hostinger deploy build skipped because CIH_SKIP_DEPLOY_BUILD=1 or HOSTINGER_SKIP_NEXT_BUILD=1 was set. This should only be used if the platform does not require a .next directory after build.');
   process.exit(0);
 }
 
