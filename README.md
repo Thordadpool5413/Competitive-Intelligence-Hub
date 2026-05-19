@@ -96,18 +96,20 @@ npm run build
 npm start
 ```
 
-The production server starts from `server.js` and listens on `process.env.PORT` or `3000`.
+The normal Hostinger production path uses the managed Next.js preset and `npm start`. The custom `server.js` bootstrapper remains available as `npm run start:custom` for emergency diagnostics.
 
 `server.js` is intentionally a Hostinger safe bootstrapper. It opens the Node.js listener before loading Next.js, then refreshes missing dependencies or stale build output in the background. That prevents GitHub pulls from dropping the public site into a Hostinger 503 while `npm install`, `npm run build`, or Next.js prepare catches up.
 
+The build also creates a Next.js standalone bundle and patches that generated standalone starter after every build. Hostinger uses that generated standalone starter during GitHub deployments, so this keeps the deployed runtime from falling into a repeated 503 restart loop.
+
 ## Hostinger settings
 
-Use Node.js version 24 or newer.
+Use Node.js version 20.x.
 
 Build command:
 
 ```bash
-npm install && npm run build
+npm run build
 ```
 
 Start command:
@@ -116,32 +118,22 @@ Start command:
 npm start
 ```
 
-Startup file:
-
-```bash
-server.js
-```
+Use the managed Next.js framework preset. Do not use `app.js`, `index.js`, or custom-server aliases as the normal Hostinger startup path.
 
 Environment variables:
 
 ```bash
 NODE_ENV=production
-HOST=0.0.0.0
-PORT=3000
 CRAWL_MAX_PAGES_PER_SITE=24
 CRAWL_TIMEOUT_MS=12000
 CIH_DATA_DIR=.data
-CIH_AUTO_INSTALL=1
-CIH_AUTO_BUILD=1
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 For Supabase persistence, run `supabase/schema.sql` in the Supabase SQL editor, then add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Hostinger. Keep the service role key server side only. If Supabase is not configured, the app falls back to MongoDB when `MONGODB_URI` is set, then to the local JSON store.
 
-If Hostinger automatically injects a port, use the Hostinger provided port and do not hardcode another value.
-
-Leave `CIH_AUTO_INSTALL` and `CIH_AUTO_BUILD` enabled on Hostinger. Set either one to `0` only when you want Hostinger's panel to handle that step before the app starts.
+Let Hostinger manage `PORT`. Do not set `HOST` to the public domain.
 
 ## GitHub to Hostinger workflow
 
@@ -151,10 +143,10 @@ Leave `CIH_AUTO_INSTALL` and `CIH_AUTO_BUILD` enabled on Hostinger. Set either o
 4. Choose GitHub as the source.
 5. Select `Thordadpool5413/Competitive-Intelligence-Hub`.
 6. Select branch `main`.
-7. Set Node.js version to 24 or newer.
-8. Set the build command to `npm install && npm run build`.
+7. Set Node.js version to 20.x.
+8. Set the build command to `npm run build`.
 9. Set the start command to `npm start`.
-10. Set the startup file to `server.js` if Hostinger asks for it.
+10. Use the managed Next.js preset; do not use `app.js` or `index.js` startup aliases.
 11. Add the environment variables.
 12. Deploy.
 

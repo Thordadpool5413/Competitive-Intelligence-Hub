@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/patch-standalone-server.js",
     "build:next": "next build",
     "build:hostinger": "next build",
     "build:strict": "CIH_STRICT_BUILD=1 next build",
@@ -14,7 +15,8 @@
     "serve": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "hostinger:start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "start:hostinger": "next start -H 0.0.0.0 -p ${PORT:-3000}",
-    "start:custom": "node server.js"
+    "start:custom": "node server.js",
+    "start:standalone": "node .next/standalone/server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
