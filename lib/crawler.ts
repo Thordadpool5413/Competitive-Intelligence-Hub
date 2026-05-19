@@ -4,6 +4,33 @@ import type { CrawledPage } from './types';
 const strongPaths = ['service','services','program','programs','hospice','home-health','home-care','palliative','wound','dementia','guide','behavioral','therapy','pediatric','maternal','child','referral','locations','service-area','bereavement','audiology','caregiver'];
 const weakPaths = ['career','job','donat','event','privacy','terms','login','wp-admin'];
 
+function getAllowedHostPatterns(): string[] {
+  return (process.env.CRAWL_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function matchesAllowedHost(hostname: string, patterns: string[]): boolean {
+  const host = hostname.toLowerCase();
+  return patterns.some((pattern) => {
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(2);
+      return host === suffix || host.endsWith(`.${suffix}`);
+    }
+    return host === pattern;
+  });
+}
+
+function requireAllowedHost(url: string) {
+  const patterns = getAllowedHostPatterns();
+  if (!patterns.length) return;
+  const host = new URL(url).hostname.toLowerCase();
+  if (!matchesAllowedHost(host, patterns)) {
+    throw new Error('Target host is not allowed for crawling.');
+  }
+}
+
 function clean(text: string) {
   return text.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
 }
@@ -83,6 +110,7 @@ async function fetchHtml(url: string, redirectCount = 0): Promise<string> {
   const safeUrl = normalize(url);
   if (!safeUrl) throw new Error('Invalid URL. Use a complete public website address.');
   requireSafePublicTarget(safeUrl);
+  requireAllowedHost(safeUrl);
   if (redirectCount > 5) throw new Error('Too many redirects while crawling website.');
 
   const controller = new AbortController();
@@ -102,6 +130,7 @@ async function fetchHtml(url: string, redirectCount = 0): Promise<string> {
       const next = location ? normalize(location, safeUrl) : null;
       if (!next) throw new Error('Redirect destination was not readable.');
       requireSafePublicTarget(next);
+      requireAllowedHost(next);
       return fetchHtml(next, redirectCount + 1);
     }
 
@@ -142,6 +171,7 @@ export async function crawlSite(startUrl: string, maxPages = 24): Promise<Crawle
   const root = normalize(startUrl);
   if (!root) throw new Error('Invalid URL. Use a complete public website address.');
   requireSafePublicTarget(root);
+  requireAllowedHost(root);
 
   const html = await fetchHtml(root);
   if (!html) throw new Error('The website did not return readable public HTML.');
