@@ -37,6 +37,7 @@ const embeddedConfig = ${JSON.stringify(embeddedConfig)};
 let nextReady = false;
 let nextPrepareError = null;
 let nextPreparing = false;
+let nextPreparePromise = null;
 let handle = null;
 let bootstrapPhase = 'waiting';
 
@@ -103,40 +104,61 @@ function runtimePayload(extra = {}) {
 }
 
 async function prepareNext() {
-  if (nextPreparing || nextReady) return;
+  if (nextReady) return true;
+  if (nextPreparePromise) return nextPreparePromise;
 
-  nextPreparing = true;
-  bootstrapPhase = 'loading-next';
+  nextPreparePromise = (async () => {
+    nextPreparing = true;
+    bootstrapPhase = 'loading-next';
 
-  try {
-    const nextConfig = readNextConfig();
-    if (nextConfig) {
-      process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(nextConfig);
+    try {
+      const nextConfig = readNextConfig();
+      if (nextConfig) {
+        process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(nextConfig);
+      }
+
+      const next = require('next');
+      const app = next({
+        dev: false,
+        dir,
+        hostname,
+        port,
+        conf: nextConfig || undefined
+      });
+
+      await app.prepare();
+      handle = app.getRequestHandler();
+      nextReady = true;
+      nextPrepareError = null;
+      bootstrapPhase = 'ready';
+      console.log('Competitive Intelligence Hub standalone Next.js app prepared successfully.');
+      return true;
+    } catch (error) {
+      nextReady = false;
+      nextPrepareError = error;
+      bootstrapPhase = 'next-prepare-failed';
+      console.error('Competitive Intelligence Hub standalone Next.js app failed to prepare.', error);
+      return false;
+    } finally {
+      nextPreparing = false;
+      nextPreparePromise = null;
     }
+  })();
 
-    const next = require('next');
-    const app = next({
-      dev: false,
-      dir,
-      hostname,
-      port,
-      conf: nextConfig || undefined
-    });
+  return nextPreparePromise;
+}
 
-    await app.prepare();
-    handle = app.getRequestHandler();
-    nextReady = true;
-    nextPrepareError = null;
-    bootstrapPhase = 'ready';
-    console.log('Competitive Intelligence Hub standalone Next.js app prepared successfully.');
-  } catch (error) {
-    nextReady = false;
-    nextPrepareError = error;
-    bootstrapPhase = 'next-prepare-failed';
-    console.error('Competitive Intelligence Hub standalone Next.js app failed to prepare.', error);
-  } finally {
-    nextPreparing = false;
-  }
+async function waitForNextReady(timeoutMs) {
+  if (nextReady && handle) return true;
+
+  const preparePromise = prepareNext();
+  const timedOut = Symbol('timed-out');
+  const result = await Promise.race([
+    preparePromise,
+    new Promise((resolve) => setTimeout(() => resolve(timedOut), timeoutMs))
+  ]);
+
+  return result !== timedOut && nextReady && handle;
 }
 
 const server = createServer(async (req, res) => {
@@ -147,7 +169,10 @@ const server = createServer(async (req, res) => {
   }
 
   if (!nextReady || !handle) {
-    prepareNext();
+    const ready = await waitForNextReady(url.pathname.startsWith('/api/') ? 6000 : 4000);
+    if (ready && handle) {
+      return handle(req, res);
+    }
 
     if (url.pathname.startsWith('/api/')) {
       return sendJson(res, 200, runtimePayload({
